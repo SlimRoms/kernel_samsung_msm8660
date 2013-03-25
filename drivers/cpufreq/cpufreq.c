@@ -790,6 +790,7 @@ static ssize_t store_vdd_levels(struct cpufreq_policy *policy, const char *buf, 
     }
     else
       break;
+  }
   if (sign != 0) {
     if (pair[0] > 0)
       acpuclk_set_vdd(0, sign * pair[0]);
