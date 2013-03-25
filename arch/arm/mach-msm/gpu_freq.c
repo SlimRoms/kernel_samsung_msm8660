@@ -69,7 +69,7 @@ static struct kobj_attribute gpu_3d_attribute =
 	__ATTR(gpu_3d_freq_phase, 0666, gpu_freq_show, gpu_freq_store);
 
 static struct attribute *gpu_control_attributes[] = {
-	&gpu_2d_attribute.attr,
+	//&gpu_2d_attribute.attr,
 	&gpu_3d_attribute.attr,
 	NULL,
 };
