@@ -65,6 +65,12 @@ config CPU_FREQ_DEFAULT_GOV_PERFORMANCE
 	  the frequency statically to the highest frequency supported by
 	  the CPU.
 
+config CPU_FREQ_DEFAULT_GOV_LIONHEART
+	bool "lionheart"
+	select CPU_FREQ_GOV_LIONHEART
+	help
+	  Use the CPUFreq governor 'lionheart' as default.
+
 config CPU_FREQ_DEFAULT_GOV_POWERSAVE
 	bool "powersave"
 	depends on EXPERT
@@ -131,6 +137,119 @@ config CPU_FREQ_GOV_SMARTASS2
 	help
 	  smartass2 - a "slightly more agressive smart" optimized governor!
 
+<<<<<<< HEAD
+=======
+config CPU_FREQ_GOV_HOTPLUG
+       tristate "'hotplug' cpufreq governor"
+       depends on CPU_FREQ && NO_HZ && HOTPLUG_CPU
+       help
+         'hotplug' - this driver mimics the frequency scaling behavior
+         in 'ondemand', but with several key differences.  First is
+         that frequency transitions use the CPUFreq table directly,
+         instead of incrementing in a percentage of the maximum
+         available frequency.  Second 'hotplug' will offline auxillary
+         CPUs when the system is idle, and online those CPUs once the
+         system becomes busy again.  This last feature is needed for
+         architectures which transition to low power states when only
+         the "master" CPU is online, or for thermally constrained
+         devices.
+
+         If you don't have one of these architectures or devices, use
+         'ondemand' instead.
+
+         If in doubt, say N.
+
+config CPU_FREQ_GOV_SAVAGEDZEN
+	tristate "'savagedzen' cpufreq policy governor"
+	depends on CPU_FREQ
+
+config CPU_FREQ_GOV_LIONHEART
+  tristate "'lionheart' cpufreq governor"
+  depends on CPU_FREQ
+
+config CPU_FREQ_GOV_ABYSSPLUG
+	tristate "'abyssplug' cpufreq governor"
+	depends on CPU_FREQ && NO_HZ && HOTPLUG_CPU
+	help
+	  'abyssplug' - this driver mimics the frequency scaling behavior
+	  in 'ondemand', but with several key differences.  First is
+	  that frequency transitions use the CPUFreq table directly,
+	  instead of incrementing in a percentage of the maximum
+	  available frequency.  Second 'abyssplug' will offline auxillary
+	  CPUs when the system is idle, and online those CPUs once the
+	  system becomes busy again.  This last feature is needed for
+	  architectures which transition to low power states when only
+	  the "master" CPU is online, or for thermally constrained
+	  devices.
+
+	  If you don't have one of these architectures or devices, use
+	  'ondemand' instead.
+
+	  If in doubt, say N.
+
+config CPU_FREQ_GOV_BADASS
+  tristate "'badass' cpufreq policy governor"
+  select CPU_FREQ_TABLE
+  help
+    'badass' - This driver adds a dynamic cpufreq policy governor.
+    The governor does a periodic polling and
+    changes frequency based on the CPU utilization.
+    The support for this governor depends on CPU capability to
+    do fast frequency switching (i.e, very low latency frequency
+    transitions).
+
+    To compile this driver as a module, choose M here: the
+    module will be called cpufreq_badass.
+
+    If in doubt, say N.
+
+config CPU_FREQ_GOV_BADASS_2_PHASE
+  tristate "'2-phase' power-efficiency badass algorithm"
+  depends on CPU_FREQ_GOV_BADASS
+  help
+    '2-phase' - This driver adds a new algo to save power
+
+config CPU_FREQ_GOV_BADASS_2_PHASE_FREQ
+  int "'2-phase' badass frequency"
+  default 864000
+  depends on CPU_FREQ_GOV_BADASS
+  depends on CPU_FREQ_GOV_BADASS_2_PHASE
+
+config CPU_FREQ_GOV_BADASS_3_PHASE
+  tristate "'3-phase' power-efficiency badass algorithm"
+  depends on CPU_FREQ_GOV_BADASS
+  depends on CPU_FREQ_GOV_BADASS_2_PHASE
+  help
+    '3-phase' - This driver adds a new algo to save power
+
+config CPU_FREQ_GOV_BADASS_3_PHASE_FREQ
+  int "'3-phase' badass frequency"
+  default 1080000
+  depends on CPU_FREQ_GOV_BADASS
+  depends on CPU_FREQ_GOV_BADASS_2_PHASE
+  depends on CPU_FREQ_GOV_BADASS_3_PHASE
+
+config CPU_FREQ_GOV_BADASS_GPU_CONTROL
+  tristate "'gpu_control' power-efficiency badass algorithm"
+  depends on CPU_FREQ_GOV_BADASS
+  depends on CPU_FREQ_GOV_BADASS_2_PHASE
+  help
+    'gpu_control' - This driver adds a new algo to save power
+
+config CPU_FREQ_GOV_BADASS_LOWBAT_POWERSAVE
+  tristate "'lowbat_powersave' power-efficiency badass algorithm"
+  depends on CPU_FREQ_GOV_BADASS
+  help
+    'lowbat_powersave' - This driver adds a new algo to save power
+
+config CPU_FREQ_GOV_BADASS_ALLOW_BYPASS
+  tristate "Allows bypassing phases"
+  depends on CPU_FREQ_GOV_BADASS
+  depends on CPU_FREQ_GOV_BADASS_2_PHASE
+  help
+    'allow_bypass' - This driver adds a bypass to the phases
+
+>>>>>>> 5c322cc... cpufreq: lionheart: added governor
 config CPU_FREQ_GOV_PERFORMANCE
 	tristate "'performance' governor"
 	help
