@@ -80,8 +80,8 @@ static struct msm_mpdec_tuners {
         .min_cpus = 1,
 };
 
-static unsigned int NwNs_Threshold[8] = {12, 0, 25, 20, 32, 28, 0, 35};
-static unsigned int TwTs_Threshold[8] = {140, 0, 140, 190, 140, 190, 0, 190};
+static unsigned int NwNs_Threshold[8] = {12, 0, 25, 20};
+static unsigned int TwTs_Threshold[8] = {140, 0, 140, 190};
 
 extern unsigned int get_rq_info(void);
 extern unsigned long acpuclk_get_rate(int);
@@ -361,14 +361,8 @@ static ssize_t show_##file_name                                         \
 {                                                                       \
 	return sprintf(buf, "%u\n", TwTs_Threshold[arraypos]);          \
 }
-show_one_twts(twts_threshold_0, 0);
-show_one_twts(twts_threshold_1, 1);
-show_one_twts(twts_threshold_2, 2);
-show_one_twts(twts_threshold_3, 3);
-show_one_twts(twts_threshold_4, 4);
-show_one_twts(twts_threshold_5, 5);
-show_one_twts(twts_threshold_6, 6);
-show_one_twts(twts_threshold_7, 7);
+show_one_twts(twts_threshold_up, 0);
+show_one_twts(twts_threshold_down, 3);
 
 #define store_one_twts(file_name, arraypos)                             \
 static ssize_t store_##file_name                                        \
@@ -383,14 +377,8 @@ static ssize_t store_##file_name                                        \
 	return count;                                                   \
 }                                                                       \
 define_one_global_rw(file_name);
-store_one_twts(twts_threshold_0, 0);
-store_one_twts(twts_threshold_1, 1);
-store_one_twts(twts_threshold_2, 2);
-store_one_twts(twts_threshold_3, 3);
-store_one_twts(twts_threshold_4, 4);
-store_one_twts(twts_threshold_5, 5);
-store_one_twts(twts_threshold_6, 6);
-store_one_twts(twts_threshold_7, 7);
+store_one_twts(twts_threshold_up, 0);
+store_one_twts(twts_threshold_down, 3);
 
 #define show_one_nwns(file_name, arraypos)                              \
 static ssize_t show_##file_name                                         \
@@ -398,14 +386,8 @@ static ssize_t show_##file_name                                         \
 {                                                                       \
 	return sprintf(buf, "%u\n", NwNs_Threshold[arraypos]);          \
 }
-show_one_nwns(nwns_threshold_0, 0);
-show_one_nwns(nwns_threshold_1, 1);
-show_one_nwns(nwns_threshold_2, 2);
-show_one_nwns(nwns_threshold_3, 3);
-show_one_nwns(nwns_threshold_4, 4);
-show_one_nwns(nwns_threshold_5, 5);
-show_one_nwns(nwns_threshold_6, 6);
-show_one_nwns(nwns_threshold_7, 7);
+show_one_nwns(nwns_threshold_up, 0);
+show_one_nwns(nwns_threshold_down, 3);
 
 #define store_one_nwns(file_name, arraypos)                             \
 static ssize_t store_##file_name                                        \
@@ -420,14 +402,8 @@ static ssize_t store_##file_name                                        \
 	return count;                                                   \
 }                                                                       \
 define_one_global_rw(file_name);
-store_one_nwns(nwns_threshold_0, 0);
-store_one_nwns(nwns_threshold_1, 1);
-store_one_nwns(nwns_threshold_2, 2);
-store_one_nwns(nwns_threshold_3, 3);
-store_one_nwns(nwns_threshold_4, 4);
-store_one_nwns(nwns_threshold_5, 5);
-store_one_nwns(nwns_threshold_6, 6);
-store_one_nwns(nwns_threshold_7, 7);
+store_one_nwns(nwns_threshold_up, 0);
+store_one_nwns(nwns_threshold_down, 3);
 
 static ssize_t show_idle_freq (struct kobject *kobj, struct attribute *attr,
                                    char *buf)
@@ -630,22 +606,10 @@ static struct attribute *msm_mpdec_attributes[] = {
         &min_cpus.attr,
         &max_cpus.attr,
 	&enabled.attr,
-	&twts_threshold_0.attr,
-	&twts_threshold_1.attr,
-	&twts_threshold_2.attr,
-	&twts_threshold_3.attr,
-	&twts_threshold_4.attr,
-	&twts_threshold_5.attr,
-	&twts_threshold_6.attr,
-	&twts_threshold_7.attr,
-	&nwns_threshold_0.attr,
-	&nwns_threshold_1.attr,
-	&nwns_threshold_2.attr,
-	&nwns_threshold_3.attr,
-	&nwns_threshold_4.attr,
-	&nwns_threshold_5.attr,
-	&nwns_threshold_6.attr,
-	&nwns_threshold_7.attr,
+	&twts_threshold_up.attr,
+	&twts_threshold_down.attr,
+	&nwns_threshold_up.attr,
+	&nwns_threshold_down.attr,
 	NULL
 };
 
