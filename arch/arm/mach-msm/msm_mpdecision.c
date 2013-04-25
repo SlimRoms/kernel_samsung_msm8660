@@ -246,7 +246,7 @@ static void msm_mpdec_work_thread(struct work_struct *work)
 				cpu_down(cpu);
 				per_cpu(msm_mpdec_cpudata, cpu).online = false;
 				on_time = ktime_to_ms(ktime_get()) - per_cpu(msm_mpdec_cpudata, cpu).on_time;
-				pr_info(MPDEC_TAG"CPU[%d] on->off | Mask=[%d%d%] | time online: %llu\n",
+				pr_info(MPDEC_TAG"CPU[%d] on->off | Mask=[%d%d] | time online: %llu\n",
 						cpu, cpu_online(0), cpu_online(1), on_time);
 			} else if (per_cpu(msm_mpdec_cpudata, cpu).online != cpu_online(cpu)) {
 				pr_info(MPDEC_TAG"CPU[%d] was controlled outside of mpdecision! | pausing [%d]ms\n",
