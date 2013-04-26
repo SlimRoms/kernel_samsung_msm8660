@@ -15,6 +15,13 @@ config CPU_FREQ
 
 	  If in doubt, say N.
 
+config LINK_CPU_GOVERNORS
+        bool "Link governor selection across CPU cores"
+        default y
+        help
+          Force CPU1 to use the same governor as CPU0 when
+          selected by the user.
+
 if CPU_FREQ
 
 config CPU_FREQ_TABLE
