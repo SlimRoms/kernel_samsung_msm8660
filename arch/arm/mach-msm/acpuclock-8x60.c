@@ -956,7 +956,7 @@ static struct acpuclk_data acpuclk_8x60_data = {
 
 static int __init acpuclk_8x60_init(struct acpuclk_soc_data *soc_data)
 {
-	struct clkctl_acpu_speed *max_freq;
+	struct clkctl_acpu_speed max_freq;
 	int cpu;
 
 	mutex_init(&drv_state.lock);
