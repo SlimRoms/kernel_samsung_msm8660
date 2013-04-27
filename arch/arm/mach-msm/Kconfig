@@ -606,7 +606,7 @@ config CPU_OC
 	default n
 	bool "MSM8x60 CPU OC"
 	help
-	  Enable MSM8x60 CPU frequencies up to 1.786MHz
+	  Enable MSM8x60 CPU frequencies up to 1.786GHz
 
 config MACH_MSM8960_SIM
 	depends on ARCH_MSM8960
