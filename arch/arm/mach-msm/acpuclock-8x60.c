@@ -956,14 +956,14 @@ static struct acpuclk_data acpuclk_8x60_data = {
 
 static int __init acpuclk_8x60_init(struct acpuclk_soc_data *soc_data)
 {
-	unsigned int max_cpu_khz;
+	struct clkctl_acpu_speed *max_freq;
 	int cpu;
 
 	mutex_init(&drv_state.lock);
 	spin_lock_init(&drv_state.l2_lock);
 
 	/* Configure hardware. */
-	max_cpu_khz = select_freq_plan();
+	max_freq = select_freq_plan();
 	unselect_scplls();
 	scpll_set_refs();
 	for_each_possible_cpu(cpu)
@@ -974,7 +974,7 @@ static int __init acpuclk_8x60_init(struct acpuclk_soc_data *soc_data)
 
 	/* Improve boot time by ramping up CPUs immediately. */
 	for_each_online_cpu(cpu)
-		acpuclk_8x60_set_rate(cpu, max_cpu_khz, SETRATE_INIT);
+		acpuclk_8x60_set_rate(cpu, max_freq->acpuclk_khz, SETRATE_INIT);
 
 	acpuclk_register(&acpuclk_8x60_data);
 	cpufreq_table_init();
