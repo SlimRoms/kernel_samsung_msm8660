@@ -601,6 +601,13 @@ config MACH_MSM8X60_DRAGON
 	help
 	  Support for the Qualcomm MSM8x60 Dragon board.
 
+config CPU_OC
+	depends on ARCH_MSM8X60
+	default n
+	bool "MSM8x60 CPU OC"
+	help
+	  Enable MSM8x60 CPU frequencies up to 1.786MHz
+
 config MACH_MSM8960_SIM
 	depends on ARCH_MSM8960
 	bool "MSM8960 Simulator"
