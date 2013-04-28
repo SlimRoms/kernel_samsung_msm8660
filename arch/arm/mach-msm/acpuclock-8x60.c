@@ -889,7 +889,7 @@ static struct notifier_block __cpuinitdata acpuclock_cpu_notifier = {
 	.notifier_call = acpuclock_cpu_callback,
 };
 
-static unsigned int __init select_freq_plan(void)
+static unsigned int __init *select_freq_plan(void)
 {
 	uint32_t pte_efuse, speed_bin, pvs, max_khz;
 	struct clkctl_acpu_speed *f;
@@ -944,7 +944,7 @@ static unsigned int __init select_freq_plan(void)
 	f--;
 	pr_info("Max ACPU freq: %u KHz\n", f->acpuclk_khz);
 
-	return f->acpuclk_khz;
+	return f;
 }
 
 static struct acpuclk_data acpuclk_8x60_data = {
@@ -956,7 +956,7 @@ static struct acpuclk_data acpuclk_8x60_data = {
 
 static int __init acpuclk_8x60_init(struct acpuclk_soc_data *soc_data)
 {
-	struct clkctl_acpu_speed max_freq;
+	struct clkctl_acpu_speed *max_freq;
 	int cpu;
 
 	mutex_init(&drv_state.lock);
