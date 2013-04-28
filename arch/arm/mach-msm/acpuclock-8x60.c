@@ -891,7 +891,7 @@ static struct notifier_block __cpuinitdata acpuclock_cpu_notifier = {
 
 static __init struct clkctl_acpu_speed *select_freq_plan(void)
 {
-	uint32_t pte_efuse, speed_bin, pvs, max_khz;
+	uint32_t pte_efuse, speed_bin, pvs;
 	struct clkctl_acpu_speed *f;
 
 	pte_efuse = readl_relaxed(QFPROM_PTE_EFUSE_ADDR);
@@ -900,12 +900,11 @@ static __init struct clkctl_acpu_speed *select_freq_plan(void)
 	if (speed_bin == 0xF)
 		speed_bin = (pte_efuse >> 4) & 0xF;
 
+	pvs = (pte_efuse >> 10) & 0x7;
+	if (pvs == 0x7)
+		pvs = (pte_efuse >> 13) & 0x7;
+
 	if (speed_bin == 0x1) {
-#ifdef CONFIG_CPU_OC
-		max_khz = 1782000;
-#else
-		max_khz = 1512000;
-#endif
 		pvs = (pte_efuse >> 10) & 0x7;
 		if (pvs == 0x7)
 			pvs = (pte_efuse >> 13) & 0x7;
@@ -930,17 +929,11 @@ static __init struct clkctl_acpu_speed *select_freq_plan(void)
 			break;
 		}
 	} else {
-		max_khz = 1188000;
 		acpu_freq_tbl = acpu_freq_tbl_1188mhz;
 	}
 
-	/* Truncate the table based to max_khz. */
-	for (f = acpu_freq_tbl; f->acpuclk_khz != 0; f++) {
-		if (f->acpuclk_khz > max_khz) {
-			f->acpuclk_khz = 0;
-			break;
-		}
-	}
+	for (f = acpu_freq_tbl; f->acpuclk_khz != 0; f++)
+		;
 	f--;
 	pr_info("Max ACPU freq: %u KHz\n", f->acpuclk_khz);
 
