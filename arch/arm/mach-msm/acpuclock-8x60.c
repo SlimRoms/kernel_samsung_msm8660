@@ -46,11 +46,11 @@
  * The PLL hardware is capable of 384MHz to 1536MHz. The L_VALs
  * used for calibration should respect these limits. */
 #define L_VAL_SCPLL_CAL_MIN	0x08 /* =  432 MHz with 27MHz source */
-//#ifdef CONFIG_CPU_OC
-//#define L_VAL_SCPLL_CAL_MAX	0x21 /* = 1782 MHz with 27MHz source */
-//#else
+#ifdef CONFIG_CPU_OC
+#define L_VAL_SCPLL_CAL_MAX	0x21 /* = 1782 MHz with 27MHz source */
+#else
 #define L_VAL_SCPLL_CAL_MAX	0x1C /* = 1512 MHz with 27MHz source */
-//#endif
+#endif
 
 #define MAX_VDD_SC		1350000 /* uV */
 #define MIN_VDD_SC		 700000 /* uV */
@@ -60,6 +60,8 @@
 #define SCPLL_LOW_VDD_FMAX	 594000 /* KHz */
 #define SCPLL_LOW_VDD		1000000 /* uV */
 #define SCPLL_NOMINAL_VDD	1100000 /* uV */
+
+#define MAX_BOOT_KHZ		1512000
 
 /* SCPLL Modes. */
 #define SCPLL_POWER_DOWN	0
@@ -291,13 +293,6 @@ static struct clkctl_acpu_speed acpu_freq_tbl_nom[] = {
   { {1, 1}, 1404000,  ACPU_SCPLL, 0, 0, 1, 0x1A, L2(19), 1150000, 0x03006000},
   { {1, 1}, 1458000,  ACPU_SCPLL, 0, 0, 1, 0x1B, L2(19), 1150000, 0x03006000},
   { {1, 1}, 1512000,  ACPU_SCPLL, 0, 0, 1, 0x1C, L2(19), 1175000, 0x03006000},
-#ifdef CONFIG_CPU_OC
-   { {1, 1}, 1566000,  ACPU_SCPLL, 0, 0, 1, 0x1D, L2(19), 1225000, 0x03006000},
-   { {1, 1}, 1620000,  ACPU_SCPLL, 0, 0, 1, 0x1E, L2(20), 1225000, 0x03006000},
-   { {1, 1}, 1674000,  ACPU_SCPLL, 0, 0, 1, 0x1F, L2(20), 1250000, 0x03006000},
-   { {1, 1}, 1728000,  ACPU_SCPLL, 0, 0, 1, 0x20, L2(20), 1275000, 0x03006000},
-   { {1, 1}, 1782000,  ACPU_SCPLL, 0, 0, 1, 0x21, L2(20), 1300000, 0x03006000},
-#endif
   { {0, 0}, 0 },
 };
 
@@ -328,13 +323,6 @@ static struct clkctl_acpu_speed acpu_freq_tbl_fast[] = {
   { {1, 1}, 1404000,  ACPU_SCPLL, 0, 0, 1, 0x1A, L2(19), 1100000, 0x03006000},
   { {1, 1}, 1458000,  ACPU_SCPLL, 0, 0, 1, 0x1B, L2(19), 1100000, 0x03006000},
   { {1, 1}, 1512000,  ACPU_SCPLL, 0, 0, 1, 0x1C, L2(19), 1125000, 0x03006000},
-#ifdef CONFIG_CPU_OC
-   { {1, 1}, 1566000,  ACPU_SCPLL, 0, 0, 1, 0x1D, L2(19), 1225000, 0x03006000},
-   { {1, 1}, 1620000,  ACPU_SCPLL, 0, 0, 1, 0x1E, L2(20), 1225000, 0x03006000},
-   { {1, 1}, 1674000,  ACPU_SCPLL, 0, 0, 1, 0x1F, L2(20), 1250000, 0x03006000},
-   { {1, 1}, 1728000,  ACPU_SCPLL, 0, 0, 1, 0x20, L2(20), 1275000, 0x03006000},
-   { {1, 1}, 1782000,  ACPU_SCPLL, 0, 0, 1, 0x21, L2(20), 1300000, 0x03006000},
-#endif
   { {0, 0}, 0 },
 };
 
@@ -979,7 +967,7 @@ static int __init acpuclk_8x60_init(struct acpuclk_soc_data *soc_data)
 
 	/* Improve boot time by ramping up CPUs immediately. */
 	for_each_online_cpu(cpu)
-		acpuclk_8x60_set_rate(cpu, max_cpu_khz, SETRATE_INIT);
+		acpuclk_8x60_set_rate(cpu, MAX_BOOT_KHZ, SETRATE_INIT);
 
 	acpuclk_register(&acpuclk_8x60_data);
 	cpufreq_table_init();
