@@ -91,10 +91,34 @@ void set_max_lock(int freq)
 		upper_limit_freq = freq;
 }
 #endif
+
+struct cpu_freq {
+	uint32_t max;
+	uint32_t min;
+	uint32_t allowed_max;
+	uint32_t allowed_min;
+	uint32_t limits_init;
+};
+
+static DEFINE_PER_CPU(struct cpu_freq, cpu_freq_info);
+
 static int set_cpu_freq(struct cpufreq_policy *policy, unsigned int new_freq)
 {
 	int ret = 0;
 	struct cpufreq_freqs freqs;
+	struct cpu_freq *limit = &per_cpu(cpu_freq_info, policy->cpu);
+
+	if (limit->limits_init) {
+		if (new_freq > limit->allowed_max) {
+			new_freq = limit->allowed_max;
+			pr_debug("max: limiting freq to %d\n", new_freq);
+		}
+
+		if (new_freq < limit->allowed_min) {
+			new_freq = limit->allowed_min;
+			pr_debug("min: limiting freq to %d\n", new_freq);
+		}
+	}
 
 	freqs.old = policy->cur;
 	if (override_cpu) {
@@ -263,8 +287,13 @@ static int __cpuinit msm_cpufreq_init(struct cpufreq_policy *policy)
 	    CPUFREQ_RELATION_H, &index) &&
 	    cpufreq_frequency_table_target(policy, table, cur_freq,
 	    CPUFREQ_RELATION_L, &index)) {
+#ifdef CONFIG_MSM_CPU_FREQ_SET_MIN_MAX
+		pr_info("cpufreq: cpu%d at invalid freq: %d - init # %d\n",
+				policy->cpu, cur_freq, cpuinitcount);
+#else
 		pr_info("cpufreq: cpu%d at invalid freq: %d\n",
 				policy->cpu, cur_freq);
+#endif
 		return -EINVAL;
 	}
 
@@ -274,8 +303,13 @@ static int __cpuinit msm_cpufreq_init(struct cpufreq_policy *policy)
 				SETRATE_CPUFREQ);
 		if (ret)
 			return ret;
+#ifdef CONFIG_MSM_CPU_FREQ_SET_MIN_MAX
+		pr_info("cpufreq: cpu%d init at %d switching to %d - init # %d\n",
+				policy->cpu, cur_freq, table[index].frequency, cpuinitcount);
+#else
 		pr_info("cpufreq: cpu%d init at %d switching to %d\n",
 				policy->cpu, cur_freq, table[index].frequency);
+#endif
 		cur_freq = table[index].frequency;
 	}
 
