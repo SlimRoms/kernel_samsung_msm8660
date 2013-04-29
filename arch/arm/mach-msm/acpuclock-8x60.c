@@ -962,3 +962,32 @@ static int __init acpuclk_8x60_init(struct acpuclk_soc_data *soc_data)
 struct acpuclk_soc_data acpuclk_8x60_soc_data __initdata = {
 	.init = acpuclk_8x60_init,
 };
+
+#ifdef CONFIG_VDD_USERSPACE
+ssize_t acpuclk_get_vdd_levels_str(char *buf)
+{
+    int i, len = 0;
+    if (buf) {
+        mutex_lock(&drv_state.lock);
+        for (i = 0; acpu_freq_tbl[i].acpuclk_khz; i++) {
+            len += sprintf(buf + len, "%8u: %4d\n", acpu_freq_tbl[i].acpuclk_khz, acpu_freq_tbl[i].vdd_sc);
+        }
+        mutex_unlock(&drv_state.lock);
+    }
+    return len;
+}
+
+void acpuclk_set_vdd(unsigned int khz, int vdd)
+{
+    int i;
+    mutex_lock(&drv_state.lock);
+    for (i = 0; acpu_freq_tbl[i].acpuclk_khz; i++) {
+        if (khz == 0)
+            acpu_freq_tbl[i].vdd_sc = min(max((unsigned int)(acpu_freq_tbl[i].vdd_sc + vdd), (unsigned int)MIN_VDD_SC), (unsigned int)MAX_VDD_SC);
+        else if (acpu_freq_tbl[i].acpuclk_khz == khz)
+            acpu_freq_tbl[i].vdd_sc = min(max((unsigned int)vdd, (unsigned int)MIN_VDD_SC), (unsigned int)MAX_VDD_SC);
+    }
+    mutex_unlock(&drv_state.lock);
+}
+#endif
+
