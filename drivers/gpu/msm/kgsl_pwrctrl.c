@@ -168,6 +168,7 @@ void kgsl_pwrctrl_pwrlevel_change(struct kgsl_device *device,
 			
 			clk_set_rate(pwr->grp_clks[0],
                                 pwr->pwrlevels[level].gpu_freq);
+
 			printk("KGSL freq: %d\n", pwr->pwrlevels[level].gpu_freq);
 		
 #ifdef CONFIG_KGSL_GPU_CTRL
