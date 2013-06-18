@@ -1,7 +1,7 @@
 VERSION = 3
 PATCHLEVEL = 0
 SUBLEVEL = 72
-EXTRAVERSION = +Moretz-3.0.8-kgsl-test
+EXTRAVERSION = +Moretz-3.0.8
 NAME = Sneaky Weasel
 
 # *DOCUMENTATION*
