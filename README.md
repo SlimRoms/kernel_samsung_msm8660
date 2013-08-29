@@ -16,13 +16,12 @@ Exhilarate devices.  This branch is the 'hot rod' kernel, it contains
 over clocked CPU frequencies, a bunch of different schedulers and
 governors, etc.  It is intended for the tweakers.
 
-
 Terms of Use
 -------------------
 
-No warranty implied or written.  You use this source at your owne risk.
+No warranty implied or written.  You use this source at your own risk.
 
-This is free useable, forkable, kangable, whatever.  However, you MUST
+This is free useable, forkable, kangable, whatever.  However, you **MUST**
 keep original code attributions intact when cherry-picking, forking, etc.
 
 You do not have to ask permission to use the Moretz & Marla code branches.
@@ -33,8 +32,8 @@ the following people & groups in your distribution:
 	Team Chopsticks
 	CyanogenMod
 	Car vs Driver
-
-
+    elbermu
+    
 How to pull this into your CM10.2 build.
 --------------------
 
@@ -61,4 +60,3 @@ https://bitbucket.org/carvsdriver/vendor_moretz-kernel
 
 Finally, you will need to remove the stock kernel from your manifest and 
 cm.depdenencies script.
-
