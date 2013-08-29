@@ -32,7 +32,7 @@ the following people & groups in your distribution:
 	Team Chopsticks
 	CyanogenMod
 	Car vs Driver
-    elbermu
+	elbermu
     
 How to pull this into your CM10.2 build.
 --------------------
@@ -41,14 +41,14 @@ To use this kernel in your Samsung Hercules, Skyrocket or Exhilarate builds for
 CM10.2, you will need to edit your roomservice.xml (or local_manifest.xml) and 
 add the following:
 
-  <remote  name="bitbucket"
-          fetch="ssh://git@bitbucket.org" />
+	<remote  name="bitbucket"
+		fetch="ssh://git@bitbucket.org" />
           
-          <project 
-            name="carvsdriver/android_kernel_samsung_msm8660-common" 
-            path="kernel/samsung/msm8660-common" 
-            remote="bitbucket" 
-            revision="moretz" />
+	<project 
+		name="carvsdriver/android_kernel_samsung_msm8660-common" 
+		path="kernel/samsung/msm8660-common" 
+		remote="bitbucket" 
+		revision="moretz" />
             
 Change your revision to either moretz or marla depending on which one you 
 want to use.
