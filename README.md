@@ -14,8 +14,8 @@ What I do ask is that you at least send me a link to your distribution or
 forked repository in github/bitbucket.  Lastly, please give credit to
 the following people & groups in your distribution:
 
-	Team Chopstics
-	CyaongenMod
+	Team Chopsticks
+	CyanogenMod
 	Car vs Driver
 
 
