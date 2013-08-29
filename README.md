@@ -1,6 +1,22 @@
 Marla & Moretz Kernels for CM10.2
 ===================
 
+Branches Supported in this Repository
+-------------------
+
+**Marla** - CM10.2 based kernel for the Samsung Skyrocket, Hercules & 
+Exhilarate devices.  This branch is intended to be very close to
+stock with specific modifications to improve performance and
+battery consumption vs. stock.  This is intended to be a flash
+and forget kernel.  There is no need for users to screw with 
+anything to get optimal results.
+
+**Moretz** - CM10.2 based kernel for the Samsung Skyrocket, Hercules & 
+Exhilarate devices.  This branch is the 'hot rod' kernel, it contains
+over clocked CPU frequencies, a bunch of different schedulers and
+governors, etc.  It is intended for the tweakers.
+
+
 Terms of Use
 -------------------
 
