@@ -33,6 +33,16 @@ the following people & groups in your distribution:
 	CyanogenMod
 	Car vs Driver
 	elbermu
+
+Change requests and bug fixes.
+--------------------
+
+For any bugs or changes, please submit pull reuqests.  I will review them
+weekly as necessary.
+
+Do not submit new feature requests to the marla branch, they will be
+ignored immediately.  New features outside of CM10.2 will only be
+considered for the moretz branch.
     
 How to pull this into your CM10.2 build.
 --------------------
