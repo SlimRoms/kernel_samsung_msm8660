@@ -37,7 +37,7 @@ the following people & groups in your distribution:
 Change requests and bug fixes.
 --------------------
 
-For any bugs or changes, please submit pull reuqests.  I will review them
+For any bugs or changes, please submit pull requests.  I will review them
 weekly as necessary.
 
 Do not submit new feature requests to the marla branch, they will be
@@ -68,5 +68,15 @@ helper scripts that go along with both kernel variants:
 
 https://bitbucket.org/carvsdriver/vendor_moretz-kernel
 
-Finally, you will need to remove the stock kernel from your manifest and 
+Next, you will need to remove the stock kernel from your manifest and 
 cm.depdenencies script.
+
+Finally, you will need to remove the stock mpdecision binary from your
+target ROM. This can be done through your installation script within
+your flashable zip file.  The file you need to remove when using either
+moretz or marla is:
+
+	/system/bin/mpdecision
+
+If you don't remove this, it will conflict with the kernel based
+MSM_MPDecision logic and may cause deadlocks on the CPU cores.
