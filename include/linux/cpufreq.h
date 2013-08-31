@@ -343,31 +343,32 @@ static inline unsigned int cpufreq_quick_get(unsigned int cpu)
 }
 #endif
 
+#ifdef CONFIG_USA_MODEL_SGH_I577
+
+#ifdef CONFIG_CPU_OC
+#define MAX_FREQ_LIMIT          1512000
+#else
+#define MAX_FREQ_LIMIT          1242000
+#endif
+
+#else
+
+#ifdef CONFIG_CPU_OC
+#define MAX_FREQ_LIMIT          1782000
+#else
+#define MAX_FREQ_LIMIT          1512000
+#endif
+
+#endif
+
+#define MIN_FREQ_LIMIT          384000
+
 
 #ifdef CONFIG_SEC_DVFS
 enum {
 	BOOT_CPU = 0,
 	NON_BOOT_CPU = 1
 };
-#ifdef CONFIG_USA_MODEL_SGH_I577
-
-#ifdef CONFIG_CPU_OC
-#define MAX_FREQ_LIMIT		1512000
-#else
-#define MAX_FREQ_LIMIT		1242000
-#endif
-
-#else
-
-#ifdef CONFIG_CPU_OC
-#define MAX_FREQ_LIMIT		1782000
-#else
-#define MAX_FREQ_LIMIT		1512000
-#endif
-
-#endif
-
-#define MIN_FREQ_LIMIT		384000
 
 #define MAX_TOUCH_LIMIT		486000
 #ifdef CONFIG_TARGET_SERIES_DALI
