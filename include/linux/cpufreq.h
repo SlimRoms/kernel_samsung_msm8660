@@ -350,13 +350,21 @@ enum {
 	NON_BOOT_CPU = 1
 };
 #ifdef CONFIG_USA_MODEL_SGH_I577
-#define MAX_FREQ_LIMIT		1242000
+
+#ifdef CONFIG_CPU_OC
+#define MAX_FREQ_LIMIT		1512000
 #else
+#define MAX_FREQ_LIMIT		1242000
+#endif
+
+#else
+
 #ifdef CONFIG_CPU_OC
 #define MAX_FREQ_LIMIT		1782000
 #else
 #define MAX_FREQ_LIMIT		1512000
 #endif
+
 #endif
 
 #define MIN_FREQ_LIMIT		384000
