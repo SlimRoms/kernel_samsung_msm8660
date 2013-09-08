@@ -46,10 +46,19 @@
  * The PLL hardware is capable of 384MHz to 1536MHz. The L_VALs
  * used for calibration should respect these limits. */
 #define L_VAL_SCPLL_CAL_MIN	0x08 /* =  432 MHz with 27MHz source */
+
+#ifdef (CONFIG_USA_MODEL_SGH_I717 || CONFIG_USA_MODEL_SGH_I727 || CONFIG_USA_MODEL_SGH_T989)
 #ifdef CONFIG_CPU_OC
 #define L_VAL_SCPLL_CAL_MAX	0x21 /* = 1782 MHz with 27MHz source */
 #else
 #define L_VAL_SCPLL_CAL_MAX	0x1C /* = 1512 MHz with 27MHz source */
+#endif
+#else
+#ifdef CONFIG_CPU_OC
+#define L_VAL_SCPLL_CAL_MAX     0x1C /* = 1512 MHz with 27MHz source */
+#else
+#define L_VAL_SCPLL_CAL_MAX     0x17 /* = 1242 MHz with 27MHz source */
+#endif
 #endif
 
 #define MAX_VDD_SC		1350000 /* uV */
@@ -60,8 +69,6 @@
 #define SCPLL_LOW_VDD_FMAX	 594000 /* KHz */
 #define SCPLL_LOW_VDD		1000000 /* uV */
 #define SCPLL_NOMINAL_VDD	1100000 /* uV */
-
-#define MAX_BOOT_KHZ		1512000
 
 /* SCPLL Modes. */
 #define SCPLL_POWER_DOWN	0
@@ -985,7 +992,7 @@ static int __init acpuclk_8x60_init(struct acpuclk_soc_data *soc_data)
 
 	/* Improve boot time by ramping up CPUs immediately. */
 	for_each_online_cpu(cpu)
-		acpuclk_8x60_set_rate(cpu, MAX_BOOT_KHZ, SETRATE_INIT);
+		acpuclk_8x60_set_rate(cpu, max_cpu_khz, SETRATE_INIT);
 
 	acpuclk_register(&acpuclk_8x60_data);
 	cpufreq_table_init();
