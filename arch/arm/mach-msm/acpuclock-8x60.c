@@ -47,17 +47,17 @@
  * used for calibration should respect these limits. */
 #define L_VAL_SCPLL_CAL_MIN	0x08 /* =  432 MHz with 27MHz source */
 
-#ifdef (CONFIG_USA_MODEL_SGH_I717 || CONFIG_USA_MODEL_SGH_I727 || CONFIG_USA_MODEL_SGH_T989)
-#ifdef CONFIG_CPU_OC
-#define L_VAL_SCPLL_CAL_MAX	0x21 /* = 1782 MHz with 27MHz source */
-#else
-#define L_VAL_SCPLL_CAL_MAX	0x1C /* = 1512 MHz with 27MHz source */
-#endif
-#else
+#ifdef CONFIG_USA_MODEL_SGH_I577
 #ifdef CONFIG_CPU_OC
 #define L_VAL_SCPLL_CAL_MAX     0x1C /* = 1512 MHz with 27MHz source */
 #else
 #define L_VAL_SCPLL_CAL_MAX     0x17 /* = 1242 MHz with 27MHz source */
+#endif
+#else
+#ifdef CONFIG_CPU_OC
+#define L_VAL_SCPLL_CAL_MAX     0x21 /* = 1782 MHz with 27MHz source */
+#else
+#define L_VAL_SCPLL_CAL_MAX     0x1C /* = 1512 MHz with 27MHz source */
 #endif
 #endif
 
