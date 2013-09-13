@@ -1,6 +1,6 @@
 VERSION = 3
 PATCHLEVEL = 0
-SUBLEVEL = 91
+SUBLEVEL = 92
 EXTRAVERSION = +Moretz-4.0.0a
 NAME = Sneaky Weasel
 
