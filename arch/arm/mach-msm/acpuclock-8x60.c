@@ -923,7 +923,7 @@ static unsigned int __init select_freq_plan(void)
 			pr_warn("ACPU PVS: Unknown. Defaulting to slow.\n");
 			break;
 		}
-	} if (speed_bin == 0x0) {
+	} else if (speed_bin == 0x0) {
 		max_khz = MAX_FREQ_LIMIT;
     		pvs = (pte_efuse >> 10) & 0x7;
                 if (pvs == 0x7)
