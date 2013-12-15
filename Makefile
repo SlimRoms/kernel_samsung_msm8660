@@ -1,8 +1,8 @@
 VERSION = 3
 PATCHLEVEL = 0
-SUBLEVEL = 94
-EXTRAVERSION = +Moretz-4.0.1a
-NAME = Sneaky Weasel
+SUBLEVEL = 101
+EXTRAVERSION = +Moretz-4.4A
+NAME = Sodden Ben Lomond
 
 # *DOCUMENTATION*
 # To see a list of typical targets execute "make help"
