@@ -1,17 +1,17 @@
-Marla & Moretz Kernels for CM10.2
+Marla & Moretz Kernels for CM11.0
 ===================
 
 Branches Supported in this Repository
 -------------------
 
-**Marla** - CM10.2 based kernel for the Samsung Skyrocket, Hercules, 
+**Marla** - CM11.0 based kernel for the Samsung Skyrocket, Hercules, 
 Blaze 4G & Exhilarate devices.  This branch is intended to be very close
 to stock with specific modifications to improve performance and
 battery consumption vs. stock.  This is intended to be a flash
 and forget kernel.  There is no need for users to screw with 
 anything to get optimal results.
 
-**Moretz** - CM10.2 based kernel for the Samsung Skyrocket, Hercules, 
+**Moretz** - CM11.0 based kernel for the Samsung Skyrocket, Hercules, 
 Blaze 4G & Exhilarate devices.  This branch is the 'hot rod' kernel, it
 contains over clocked CPU frequencies, a bunch of different schedulers and
 governors, etc.  It is intended for the tweakers.
@@ -33,6 +33,7 @@ the following people & groups in your distribution:
 	CyanogenMod
 	Car vs Driver
 	elbermu
+	your mom
 
 Change requests and bug fixes.
 --------------------
@@ -44,7 +45,7 @@ Do not submit new feature requests to the marla branch, they will be
 ignored immediately.  New features outside of CM10.2 will only be
 considered for the moretz branch.
     
-How to pull this into your CM10.2 build.
+How to pull this into your CM11.0 build.
 --------------------
 
 To use this kernel in your Samsung Hercules, Skyrocket or Exhilarate builds for 
