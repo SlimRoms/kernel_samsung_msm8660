@@ -47,18 +47,10 @@
  * used for calibration should respect these limits. */
 #define L_VAL_SCPLL_CAL_MIN	0x08 /* =  432 MHz with 27MHz source */
 
-#ifdef CONFIG_USA_MODEL_SGH_I577
-#ifdef CONFIG_CPU_OC
-#define L_VAL_SCPLL_CAL_MAX     0x1C /* = 1512 MHz with 27MHz source */
-#else
-#define L_VAL_SCPLL_CAL_MAX     0x17 /* = 1242 MHz with 27MHz source */
-#endif
-#else
 #ifdef CONFIG_CPU_OC
 #define L_VAL_SCPLL_CAL_MAX     0x21 /* = 1782 MHz with 27MHz source */
 #else
 #define L_VAL_SCPLL_CAL_MAX     0x1C /* = 1512 MHz with 27MHz source */
-#endif
 #endif
 
 #define MAX_VDD_SC		1350000 /* uV */
@@ -268,6 +260,7 @@ static struct clkctl_acpu_speed acpu_freq_tbl_slow[] = {
   { {1, 1}, 1674000,  ACPU_SCPLL, 0, 0, 1, 0x1F, L2(20), 1250000, 0x03006000},
   { {1, 1}, 1728000,  ACPU_SCPLL, 0, 0, 1, 0x20, L2(20), 1275000, 0x03006000},
   { {1, 1}, 1782000,  ACPU_SCPLL, 0, 0, 1, 0x21, L2(20), 1300000, 0x03006000},
+  { {1, 1}, 1836000,  ACPU_SCPLL, 0, 0, 1, 0x22, L2(20), 1300000, 0x03006000},
   { {0, 0}, 0 },
 };
 
