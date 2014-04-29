@@ -2,10 +2,15 @@
  * Driver for keys on GPIO lines capable of generating interrupts.
  *
  * Copyright 2005 Phil Blundell
+ * Copyright 2011 Michael Richter (alias neldar)
+ * Copyright 2012 Jeffrey Clark <h0tw1r3@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
+ * 
+ * BLN hack oriignally by neldar for SGS. Adapted for SGSII by creams
+ * 			addapted for samsung-msm8660-common by Mr. X
  */
 
 #include <linux/module.h>
@@ -28,22 +33,20 @@
 #include <asm/uaccess.h>
 #include <linux/earlysuspend.h>
 #include <asm/io.h>
+#if defined(CONFIG_GENERIC_BLN)
+#include <linux/bln.h>
+#endif
 #ifdef CONFIG_CPU_FREQ
 //#include <mach/cpu-freq-v210.h>  //temp ks
 #endif
 //#include <mach/max8998_function.h>
-#include <mach/board-msm8660.h>
 
 #include "cypress-touchkey.h"
 #include <linux/regulator/consumer.h>
-
-#ifdef CONFIG_TOUCH_CYPRESS_SWEEP2WAKE
-#include <linux/input/sweep2wake.h>
-#include <linux/s2w-switch.h>
-#endif
+#include <linux/mfd/pmic8058.h>
 
 /*
-Cypress touchkey register
+Melfas touchkey register
 */
 #define KEYCODE_REG 0x00
 #define FIRMWARE_VERSION 0x01
@@ -61,7 +64,7 @@ Cypress touchkey register
 #define END_KEY 0x04
 
 #define I2C_M_WR 0		/* for i2c */
-#define DEVICE_NAME "sec_touchkey"
+#define DEVICE_NAME "melfas_touchkey"
 
 #if defined (CONFIG_USA_MODEL_SGH_T769)
 #define BUILTIN_FW_VER	0x0F
@@ -92,8 +95,8 @@ static int touchkey_keycode[5] = {0,KEY_MENU , KEY_HOME, KEY_BACK, 0};
 #else
 static int touchkey_keycode[3] = { 0, KEY_BACK, KEY_MENU };
 #endif
-#endif
-#endif
+#endif 
+#endif 
 #if defined (CONFIG_USA_MODEL_SGH_T989) || defined (CONFIG_USA_MODEL_SGH_T769)//new touchkey fpcb
 static int touchkey_pba_revision = TOUCHKEY_PBA_REV_NA;
 #endif
@@ -108,15 +111,13 @@ unsigned char data_mdule_rev;
 #ifdef CONFIG_S5PC110_T959_BOARD
 static int melfas_evt_enable_status = 1;
 static ssize_t melfas_evt_status_show(struct device *dev, struct device_attribute *attr, char *sysfsbuf)
-{
+{	
 	return sprintf(sysfsbuf, "%d\n", melfas_evt_enable_status);
 }
 
 static ssize_t melfas_evt_status_store(struct device *dev, struct device_attribute *attr,const char *sysfsbuf, size_t size)
 {
-	mutex_lock(&touchkey_driver->mutex);
 	sscanf(sysfsbuf, "%d", &melfas_evt_enable_status);
-	mutex_unlock(&touchkey_driver->mutex);
 	return size;
 }
 
@@ -147,61 +148,10 @@ extern int wacom_is_pressed;
 static u8 firm_version = 0;
 #endif
 
-#ifdef CONFIG_TOUCH_CYPRESS_SWEEP2WAKE
-int s2w_switch = 1;
-int s2w_count = 0;
-bool scr_suspended = false, exec_count = true;
-bool scr_on_touch = false, barrier[2] = {false, false};
-static struct input_dev * sweep2wake_pwrdev;
-static DEFINE_MUTEX(pwrkeyworklock);
-
-static int __init read_s2w_cmdline(char *s2w)
-{
-  if (strcmp(s2w, "1") == 0) {
-    printk(KERN_INFO "[cmdline_s2w]: Sweep2Wake enabled. | s2w='%s'", s2w);
-    s2w_switch = 1;
-  } else if (strcmp(s2w, "0") == 0) {
-    printk(KERN_INFO "[cmdline_s2w]: Sweep2Wake disabled. | s2w='%s'", s2w);
-    s2w_switch = 0;
-  } else {
-    printk(KERN_INFO "[cmdline_s2w]: No valid input found. Sweep2Wake disabled. | s2w='%s'", s2w);
-    s2w_switch = 0;
-  }
-  return 1;
-}
-__setup("s2w=", read_s2w_cmdline);
-
-extern void sweep2wake_setdev(struct input_dev * input_device) {
-  sweep2wake_pwrdev = input_device;
-  return;
-}
-EXPORT_SYMBOL(sweep2wake_setdev);
-
-static void sweep2wake_presspwr(struct work_struct * sweep2wake_presspwr_work) {
-  input_event(sweep2wake_pwrdev, EV_KEY, KEY_POWER, 1);
-  input_event(sweep2wake_pwrdev, EV_SYN, 0, 0);
-  msleep(100);
-  input_event(sweep2wake_pwrdev, EV_KEY, KEY_POWER, 0);
-  input_event(sweep2wake_pwrdev, EV_SYN, 0, 0);
-  msleep(100);
-  return;
-}
-static DECLARE_WORK(sweep2wake_presspwr_work, sweep2wake_presspwr);
-
-void sweep2wake_pwrtrigger(void) {
-  if (mutex_trylock(&pwrkeyworklock)) {
-    schedule_work(&sweep2wake_presspwr_work);
-    mutex_unlock(&pwrkeyworklock);
-  }
-  return;
-}
-#endif
-
 struct i2c_touchkey_driver {
 	struct i2c_client *client;
 	struct input_dev *input_dev;
 	struct early_suspend early_suspend;
-	struct mutex mutex;
 };
 struct i2c_touchkey_driver *touchkey_driver = NULL;
 struct work_struct touchkey_work;
@@ -221,17 +171,18 @@ static bool g_debug_switch = true;
 static bool g_debug_switch = false;
 #endif
 
-#if defined(CONFIG_USA_MODEL_SGH_I717)
+#if defined(DEBUG_TKEY_I717)
+static bool Q1_debug_msg = true;
+#else
 static bool Q1_debug_msg = false;
 #endif
 
-
-static const struct i2c_device_id sec_touchkey_id[] = {
-	{"sec_touchkey", 0},
+static const struct i2c_device_id melfas_touchkey_id[] = {
+	{"melfas_touchkey", 0},
 	{}
 };
 
-MODULE_DEVICE_TABLE(i2c, sec_touchkey_id);
+MODULE_DEVICE_TABLE(i2c, melfas_touchkey_id);
 
 static void init_hw(void);
 static int i2c_touchkey_probe(struct i2c_client *client, const struct i2c_device_id *id);
@@ -241,19 +192,17 @@ static int touchled_cmd_reversed=0;
 extern int tkey_vdd_enable(int onoff);
 extern int tkey_led_vdd_enable(int onoff);
 #if defined (CONFIG_KOR_MODEL_SHV_E160L)\
-     || defined (CONFIG_KOR_MODEL_SHV_E110S)
+     || defined (CONFIG_KOR_MODEL_SHV_E110S) 
 static int press_check = 0;
-#endif
-#if defined (CONFIG_KOR_MODEL_SHV_E160L)
 static int touchkey_connected = 0;
 #endif
 
 struct i2c_driver touchkey_i2c_driver = {
 	.driver = {
-		.name = "sec_touchkey_driver",
+		.name = "melfas_touchkey_driver",
 		.owner	= THIS_MODULE,
 	},
-	.id_table = sec_touchkey_id,
+	.id_table = melfas_touchkey_id,
 	.probe = i2c_touchkey_probe,
 };
 
@@ -274,6 +223,10 @@ static int i2c_touchkey_read(u8 reg, u8 * val, unsigned int len)
 	int retry = 5;
 	struct i2c_msg msg[1];
 
+	#if defined(CONFIG_USA_MODEL_SGH_I577)	
+	int index = 0;
+	#endif	
+
 	if ((touchkey_driver == NULL)) {
 		printk(KERN_DEBUG "[TKEY] touchkey is not enabled.R\n");
 		return -ENODEV;
@@ -290,6 +243,23 @@ static int i2c_touchkey_read(u8 reg, u8 * val, unsigned int len)
 		printk(KERN_DEBUG "[TKEY] %s %d i2c transfer error \n", __func__, __LINE__);	/* add by inter.park */
 		mdelay(10);
 	}
+	#if defined(CONFIG_USA_MODEL_SGH_I577)
+	for (index = 1; index< sizeof(touchkey_keycode)/sizeof(*touchkey_keycode); index++)
+	{
+		if(touchkey_pressed & (1<<index))
+		{
+			input_report_key(touchkey_driver->input_dev, touchkey_keycode[index], 0);
+			input_sync(touchkey_driver->input_dev);
+			printk ("[TEKY] suspend: release unreleased keycode: [%d]\n", touchkey_keycode[index]);
+		}			
+	}
+	tkey_vdd_enable(0);
+	tkey_led_vdd_enable(0);
+	msleep(200);
+	tkey_vdd_enable(1);
+	tkey_led_vdd_enable(1);
+	#endif
+	
 	return err;
 }
 
@@ -299,8 +269,8 @@ static int i2c_touchkey_write(u8 * val, unsigned int len)
 	struct i2c_msg msg[1];
 	int retry = 2;
 
-	if ((touchkey_driver == NULL) || !(touchkey_enable == 1)) {
-		printk(KERN_DEBUG "[TKEY] touchkey is not enabled.W\n");
+	if (touchkey_driver == NULL) {
+		printk(KERN_ERR "[TKEY] touchkey is not enabled.W\n");
 		return -ENODEV;
 	}
 
@@ -310,6 +280,9 @@ static int i2c_touchkey_write(u8 * val, unsigned int len)
 		msg->len = len;
 		msg->buf = val;
 		err = i2c_transfer(touchkey_driver->client->adapter, msg, 1);
+#if 1 /* creams */
+		printk("write value %d to address %d\n",*val, msg->addr);
+#endif
 		if (err >= 0)
 			return 0;
 
@@ -335,7 +308,7 @@ int cypress_write_register(u8 addr, u8 w_data)
 || defined (CONFIG_USA_MODEL_SGH_T989) || defined (CONFIG_USA_MODEL_SGH_I727) \
 || defined (CONFIG_USA_MODEL_SGH_I717) || defined(CONFIG_KOR_MODEL_SHV_E160L) \
 || defined(CONFIG_USA_MODEL_SGH_I757) || defined (CONFIG_USA_MODEL_SGH_T769) \
-|| defined(CONFIG_USA_MODEL_SGH_I577) || defined(CONFIG_CAN_MODEL_SGH_I577R) || defined(CONFIG_CAN_MODEL_SGH_I757M) || defined(CONFIG_JPN_MODEL_SC_05D)
+|| defined(CONFIG_USA_MODEL_SGH_I577) || defined(CONFIG_CAN_MODEL_SGH_I577R) || defined(CONFIG_CAN_MODEL_SGH_I757M)
 extern unsigned int  get_hw_rev(void);
 #endif
 
@@ -344,11 +317,11 @@ int is_touchkey_available(void)
 	int ret = 1;
 #if defined (CONFIG_EPEN_WACOM_G5SP)
 if( (wacom_is_pressed == 1)||(touch_is_pressed == 1)) ret = 0;
-#else
+#else	
 	if( touch_is_pressed == 1 ) ret = 0;
 #endif
 	return ret;
-}
+}	
 
 void touchkey_work_func(struct work_struct *p)
 {
@@ -356,21 +329,20 @@ void touchkey_work_func(struct work_struct *p)
 	int ret;
 	int retry = 10;
 
-	mutex_lock(&touchkey_driver->mutex);
 	set_touchkey_debug('a');
-//	printk("[TKEY] INPIN %d\n",gpio_get_value_cansleep(GPIO_TOUCHKEY));
+	printk("[TKEY] INPIN %d\n",gpio_get_value_cansleep(GPIO_TOUCHKEY));
 
 		ret = i2c_touchkey_read(KEYCODE_REG, data, 1);
 		printk("[0]%d [1]%d [2]%d\n", data[0],data[1], data[2]);
 		set_touchkey_debug(data[0]);
-
+    
 		if ((data[0] & ESD_STATE_BIT) || (ret != 0)) {
 			printk("[TKEY] ESD_STATE_BIT set or I2C fail: data: %d, retry: %d\n", data[0], retry);
-			//releae key
+			//releae key 
 			input_report_key(touchkey_driver->input_dev, touchkey_keycode[1], 0);
 			input_report_key(touchkey_driver->input_dev, touchkey_keycode[2], 0);
 			retry = 10;
-
+        
 			while (retry--) {
 				mdelay(300);
 				init_hw();
@@ -378,7 +350,6 @@ void touchkey_work_func(struct work_struct *p)
 					printk("[TKEY] %s touchkey init success\n", __func__);
 					set_touchkey_debug('O');
 					enable_irq(IRQ_TOUCHKEY_INT);
-                                        mutex_unlock(&touchkey_driver->mutex);
 					return;
 				}
 				printk("[TKEY] %s %d i2c transfer error retry = %d\n", __func__, __LINE__, retry);
@@ -389,16 +360,13 @@ void touchkey_work_func(struct work_struct *p)
 			touchkey_enable = -1;
 			printk("[TKEY] %s touchkey died\n", __func__);
 			set_touchkey_debug('D');
-                        mutex_unlock(&touchkey_driver->mutex);
 			return;
 		}
 
 		if (data[0] & UPDOWN_EVENT_BIT) {
 			input_report_key(touchkey_driver->input_dev, touchkey_keycode[data[0] & KEYCODE_BIT], 0);
 			input_sync(touchkey_driver->input_dev);
-			#ifndef CONFIG_USA_MODEL_SGH_T989
 			printk(KERN_DEBUG "[TKEY] touchkey release keycode:%d \n", touchkey_keycode[data[0] & KEYCODE_BIT]);
-			#endif
 		} else {
 			if (touch_is_pressed) {
 				printk(KERN_DEBUG "[TKEY] touchkey pressed but don't send event because touch is pressed. \n");
@@ -408,16 +376,13 @@ void touchkey_work_func(struct work_struct *p)
 				}
 				input_report_key(touchkey_driver->input_dev, touchkey_keycode[data[0] & KEYCODE_BIT], 1);
 				input_sync(touchkey_driver->input_dev);
-				#ifndef CONFIG_USA_MODEL_SGH_T989
 				printk(KERN_DEBUG "[TKEY] touchkey press keycode:%d \n", touchkey_keycode[data[0] & KEYCODE_BIT]);
-				#endif
 			}
 		}
 
 	//clear interrupt
 	printk("[TKEY] %s: END \n", __func__);
 	set_touchkey_debug('A');
-        mutex_unlock(&touchkey_driver->mutex);
 	enable_irq(IRQ_TOUCHKEY_INT);
 }
 
@@ -426,18 +391,10 @@ void touchkey_resume_func(struct work_struct *p)
 //	int err = 0;
 //	int rc = 0;
 
-#ifdef CONFIG_TOUCH_CYPRESS_SWEEP2WAKE
-	if (s2w_switch > 0) {
-		disable_irq_wake(IRQ_TOUCHKEY_INT);    
-	} else {
-#endif
 	enable_irq(IRQ_TOUCHKEY_INT);
-#ifdef CONFIG_TOUCH_CYPRESS_SWEEP2WAKE
-        }
-#endif
 	touchkey_enable = 1;
 	msleep(50);
-
+	
 #if defined (CONFIG_USA_MODEL_SGH_T989)||defined (CONFIG_USA_MODEL_SGH_I727) || defined (CONFIG_USA_MODEL_SGH_I717)\
 	|| defined (CONFIG_USA_MODEL_SGH_T769) || defined(CONFIG_USA_MODEL_SGH_I577) || defined(CONFIG_CAN_MODEL_SGH_I577R)\
 	|| defined(CONFIG_USA_MODEL_SGH_I757) || defined(CONFIG_CAN_MODEL_SGH_I757M)
@@ -467,42 +424,40 @@ static irqreturn_t touchkey_interrupt(int irq, void *dummy)  // ks 79 - threaded
     int ret;
     int retry = 10;
 
-    mutex_lock(&touchkey_driver->mutex);
-
     set_touchkey_debug('I');
     disable_irq_nosync(IRQ_TOUCHKEY_INT);
 
-    #if defined(CONFIG_KOR_MODEL_SHV_E160L) // Temporary Code
+    #if defined(CONFIG_KOR_MODEL_SHV_E160L) // Temporary Code 
     //if (get_hw_rev() <= 0x04){
-        tkey_vdd_enable(1);
+        tkey_vdd_enable(1); 
     //}
-    #endif
+    #endif 
 
 	set_touchkey_debug('a');
 	ret = i2c_touchkey_read(KEYCODE_REG, data, 1);
 
-//	if(g_debug_switch)
+	if(g_debug_switch)
 		printk("[TKEY] DATA0 %d\n", data[0]);
 
-	#if defined(CONFIG_USA_MODEL_SGH_I717)
+	#if defined(CONFIG_USA_MODEL_SGH_I717) || defined(CONFIG_USA_MODEL_SGH_I577) || defined (CONFIG_USA_MODEL_SGH_T769)
 	if(Q1_debug_msg)
 		printk("[TKEY] DATA0 %d\n", data[0]);
 	#endif
 
-    #if defined(CONFIG_KOR_MODEL_SHV_E160L) // Temporary Code
+    #if defined(CONFIG_KOR_MODEL_SHV_E160L) // Temporary Code 
 	if (get_hw_rev() <= 0x04){
         if (data[0] > 80)  {
-            data[0] = data[0] - 80;
+            data[0] = data[0] - 80; 
             printk("[TKEY] DATA0 change [%d] \n", data[0]);
         }
     }
-    #endif
+    #endif 
 
 	set_touchkey_debug(data[0]);
 	if ((data[0] & ESD_STATE_BIT) || (ret != 0)) {
 		printk("[TKEY] ESD_STATE_BIT set or I2C fail: data: %d, retry: %d\n", data[0], retry);
 
-		//releae key
+		//releae key 
 		input_report_key(touchkey_driver->input_dev, touchkey_keycode[1], 0);
 		input_report_key(touchkey_driver->input_dev, touchkey_keycode[2], 0);
 		retry = 10;
@@ -513,7 +468,6 @@ static irqreturn_t touchkey_interrupt(int irq, void *dummy)  // ks 79 - threaded
             if (i2c_touchkey_read(KEYCODE_REG, data, 3) >= 0) {
                 printk("[TKEY] %s touchkey init success\n", __func__);
 				set_touchkey_debug('O');
-                                mutex_unlock(&touchkey_driver->mutex);
 				enable_irq(IRQ_TOUCHKEY_INT);
 				return IRQ_NONE;
 			}
@@ -524,28 +478,24 @@ static irqreturn_t touchkey_interrupt(int irq, void *dummy)  // ks 79 - threaded
 		touchkey_enable = -1;
 		printk("[TKEY] %s touchkey died\n", __func__);
 		set_touchkey_debug('D');
-                mutex_unlock(&touchkey_driver->mutex);
 		return IRQ_NONE;
 	}
 
 #if defined (CONFIG_KOR_MODEL_SHV_E160L)\
-|| defined (CONFIG_KOR_MODEL_SHV_E110S)
+|| defined (CONFIG_KOR_MODEL_SHV_E110S) 
 	if (data[0] & UPDOWN_EVENT_BIT) {
 		if(press_check == touchkey_keycode[data[0] & KEYCODE_BIT]){
 			input_report_key(touchkey_driver->input_dev, touchkey_keycode[data[0] & KEYCODE_BIT], 0);
 			touchkey_pressed &= ~(1 << (data[0] & KEYCODE_BIT));
 			input_sync(touchkey_driver->input_dev);
-//			if(g_debug_switch)
-#ifndef CONFIG_USA_MODEL_SGH_T989
+			if(g_debug_switch)			
 				printk(KERN_DEBUG "touchkey release keycode:%d \n", touchkey_keycode[data[0] & KEYCODE_BIT]);
-#endif
-				
 		}else{
 			input_report_key(touchkey_driver->input_dev, press_check, 0);
 	        }
 			press_check = 0;
 	} else {
-		if (touch_is_pressed) {
+		if (touch_is_pressed) {   
 			printk(KERN_DEBUG "touchkey pressed but don't send event because touch is pressed. \n");
 			set_touchkey_debug('P');
 		} else {
@@ -555,10 +505,8 @@ static irqreturn_t touchkey_interrupt(int irq, void *dummy)  // ks 79 - threaded
 			touchkey_pressed |= (1 << (data[0] & KEYCODE_BIT));
 			input_sync(touchkey_driver->input_dev);
 			press_check = touchkey_keycode[data[0] & KEYCODE_BIT];
-//			if(g_debug_switch)
-                                #ifndef CONFIG_USA_MODEL_SGH_T989
+			if(g_debug_switch)				
 				printk(KERN_DEBUG "touchkey press keycode:%d \n", touchkey_keycode[data[0] & KEYCODE_BIT]);
-				#endif
 		}
 	}
 #else
@@ -566,89 +514,50 @@ static irqreturn_t touchkey_interrupt(int irq, void *dummy)  // ks 79 - threaded
 		input_report_key(touchkey_driver->input_dev, touchkey_keycode[data[0] & KEYCODE_BIT], 0);
 		touchkey_pressed &= ~(1 << (data[0] & KEYCODE_BIT));
 		input_sync(touchkey_driver->input_dev);
-
-//		if(g_debug_switch)
-#ifndef CONFIG_USA_MODEL_SGH_T989
+		
+		if(g_debug_switch)			
 			printk(KERN_DEBUG "touchkey release keycode:%d \n", touchkey_keycode[data[0] & KEYCODE_BIT]);
-#endif
-	#if defined(CONFIG_USA_MODEL_SGH_I717)
-	#ifndef CONFIG_USA_MODEL_SGH_T989
+		
+	#if defined(CONFIG_USA_MODEL_SGH_I717) || defined(CONFIG_USA_MODEL_SGH_I577) || defined (CONFIG_USA_MODEL_SGH_T769) || defined(CONFIG_USA_MODEL_SGH_I727) || defined(CONFIG_USA_MODEL_SGH_T989)
 		if(Q1_debug_msg)
-			printk(KERN_DEBUG "touchkey release keycode:%d \n", touchkey_keycode[data[0] & KEYCODE_BIT]);
+			printk(KERN_DEBUG "[TKEY]touchkey release keycode:%d \n", touchkey_keycode[data[0] & KEYCODE_BIT]);
+		else
+			printk(KERN_DEBUG "[TKEY]release\n");
 	#endif
-	#endif
-
-#ifdef CONFIG_TOUCH_CYPRESS_SWEEP2WAKE
-    if ((!touch_is_pressed) && (scr_suspended == true) && (s2w_switch > 0)) {
-      int key = data[0] & KEYCODE_BIT;
-      switch (key) {
-      case 1:
-        s2w_count = 1;
-        break;
-      case 2:
-        pr_debug(KERN_ERR "[TKEY] count: %d and key: %d\n",s2w_count,key);
-        if (s2w_count == 1) {
-          s2w_count++;
-        } else {
-          s2w_count = 0;
-        }
-        break;
-      case 3:
-        pr_debug(KERN_ERR "[TKEY] count: %d and key: %d\n",s2w_count,key);
-        if (s2w_count == 2) {
-          s2w_count++;
-        } else {
-          s2w_count = 0;
-        }
-        break;
-      case 4:
-        pr_debug(KERN_ERR "[TKEY] count: %d and key: %d\n",s2w_count,key);
-        if (s2w_count == 3) {
-          sweep2wake_pwrtrigger();
-          s2w_count = 0;
-        } else {
-          s2w_count = 0;
-        }
-        break;
-      }
-    }
-#endif
 
 	} else {
-		if (touch_is_pressed) {
+		if (touch_is_pressed) {   
 			printk(KERN_DEBUG "touchkey pressed but don't send event because touch is pressed. \n");
 			set_touchkey_debug('P');
 		} else {
+			if ((data[0] & KEYCODE_BIT) == 2) {	// if back key is pressed, release multitouch
+			}
 			input_report_key(touchkey_driver->input_dev, touchkey_keycode[data[0] & KEYCODE_BIT], 1);
 			touchkey_pressed |= (1 << (data[0] & KEYCODE_BIT));
 			input_sync(touchkey_driver->input_dev);
-
-//			if(g_debug_switch)
-                                #ifndef CONFIG_USA_MODEL_SGH_T989 
+			
+			if(g_debug_switch)				
 				printk(KERN_DEBUG "touchkey press keycode:%d \n", touchkey_keycode[data[0] & KEYCODE_BIT]);
-				#endif
-
-		#if defined(CONFIG_USA_MODEL_SGH_I717)
-//			if(Q1_debug_msg)      
-                                #ifndef CONFIG_USA_MODEL_SGH_T989
-				printk(KERN_DEBUG "touchkey press keycode:%d \n", touchkey_keycode[data[0] & KEYCODE_BIT]);
-				#endif
+			
+		#if defined(CONFIG_USA_MODEL_SGH_I717) || defined(CONFIG_USA_MODEL_SGH_I577) || defined (CONFIG_USA_MODEL_SGH_T769) || defined (CONFIG_USA_MODEL_SGH_I727) || defined (CONFIG_USA_MODEL_SGH_T989)
+			if(Q1_debug_msg)
+				printk(KERN_DEBUG "[TKEY]touchkey press keycode:%d \n", touchkey_keycode[data[0] & KEYCODE_BIT]);
+			else
+				printk(KERN_DEBUG "[TKEY]press\n");
 		#endif
 		}
 	}
 #endif
 	set_touchkey_debug('A');
-        mutex_unlock(&touchkey_driver->mutex);
 	enable_irq(IRQ_TOUCHKEY_INT);
     //queue_work(touchkey_wq, &touchkey_work);
 	return IRQ_HANDLED;
 }
 
 #if defined(CONFIG_USA_MODEL_SGH_I717) || defined (CONFIG_KOR_MODEL_SHV_E160L)
-// mutex is assumed to be locked before calling this function
 static int touchkey_auto_calibration(int autocal_on_off)
 {
-
+	
 	u8 data[6]={0,};
 	int count = 0;
 	int ret = 0;
@@ -692,65 +601,59 @@ static int touchkey_auto_calibration(int autocal_on_off)
 
 }
 #else
-// mutex is assumed to be locked before calling this function
 static void touchkey_auto_calibration(int autocal_on_off)
 {
 	signed char int_data[] ={0x50,0x00,0x00,0x01};
-	signed char int_data1[] ={0x50,0x00,0x00,0x08};
+	signed char int_data1[] ={0x50,0x00,0x00,0x08};	
 //	signed char data[0];
-
+	
 	printk("[TKEY] enter touchkey_auto_calibration\n");
-
+		
 	if (autocal_on_off == 1)
-		i2c_touchkey_write(int_data, 4);
+		i2c_touchkey_write(int_data, 4);	
 	else
 		i2c_touchkey_write(int_data1, 4);
-
-    msleep(10);
+    
+    msleep(10);	
     // i2c_touchkey_read	(0x05, data, 1);
     // printk("[TKEY] end touchkey_auto_calibration result = %d",data[0]);
 }
 #endif
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
-static void sec_touchkey_early_suspend(struct early_suspend *h)
+static void melfas_touchkey_early_suspend(struct early_suspend *h)
 {
     int index =0;
-#if defined (CONFIG_USA_MODEL_SGH_I717)
+#if defined(CONFIG_KOR_MODEL_SHV_E160L) || defined (CONFIG_USA_MODEL_SGH_I717)    
     int ret = 0;
-#endif
-    /*signed char int_data[] ={0x80};*/
+    signed char int_data[] ={0x80};
+#endif    
 
-    mutex_lock(&touchkey_driver->mutex);
+    if (touchkey_enable < 0)
+        return;
 
     touchkey_enable = 0;
     set_touchkey_debug('S');
-    printk(KERN_DEBUG "sec_touchkey_early_suspend\n");
+    printk(KERN_DEBUG "melfas_touchkey_early_suspend\n");
 
-#ifdef CONFIG_TOUCH_CYPRESS_SWEEP2WAKE
-  if (s2w_switch > 0) {
-    scr_suspended = true;
-    enable_irq_wake(IRQ_TOUCHKEY_INT);
-  } else {
-#endif
+    if (touchkey_enable < 0) {
+        printk("---%s---touchkey_enable: %d\n", __FUNCTION__, touchkey_enable);
+        return;
+    }
+
     disable_irq(IRQ_TOUCHKEY_INT);
-#ifdef CONFIG_TOUCH_CYPRESS_SWEEP2WAKE
-  }
-#endif
-
 #if defined (CONFIG_USA_MODEL_SGH_I717)
     ret = cancel_work_sync(&touchkey_work);
     if (ret) {
 	    printk(KERN_DEBUG "[Touchkey] enable_irq ret = %d\n", ret);
 	    enable_irq(IRQ_TOUCHKEY_INT);
     }
-#endif
+#endif    
 
-#ifndef CONFIG_TOUCH_CYPRESS_SWEEP2WAKE
 #if defined (CONFIG_USA_MODEL_SGH_T989) || defined (CONFIG_USA_MODEL_SGH_T769)
 	if (get_hw_rev() >= 0x0d){
 		tkey_vdd_enable(0);
-		tkey_led_vdd_enable(0);
+		tkey_led_vdd_enable(0);				
 		gpio_direction_output(GPIO_TOUCHKEY_SCL, 0);
 		gpio_free(GPIO_TOUCHKEY_SCL);
 		gpio_direction_output(GPIO_TOUCHKEY_SDA, 0);
@@ -758,7 +661,7 @@ static void sec_touchkey_early_suspend(struct early_suspend *h)
 		}
 #elif defined(CONFIG_USA_MODEL_SGH_I577)|| defined(CONFIG_CAN_MODEL_SGH_I577R)
 		tkey_vdd_enable(0);
-		tkey_led_vdd_enable(0);
+		tkey_led_vdd_enable(0); 			
 		gpio_direction_output(GPIO_TOUCHKEY_SCL, 0);
 		gpio_free(GPIO_TOUCHKEY_SCL);
 		gpio_direction_output(GPIO_TOUCHKEY_SDA, 0);
@@ -766,7 +669,7 @@ static void sec_touchkey_early_suspend(struct early_suspend *h)
 #elif defined (CONFIG_EUR_MODEL_GT_I9210)
 	if (get_hw_rev() >= 0x07){
 		tkey_vdd_enable(0);
-		tkey_led_vdd_enable(0);
+		tkey_led_vdd_enable(0); 			
 		gpio_direction_output(GPIO_TOUCHKEY_SCL, 0);
 		gpio_free(GPIO_TOUCHKEY_SCL);
 		gpio_direction_output(GPIO_TOUCHKEY_SDA, 0);
@@ -775,7 +678,7 @@ static void sec_touchkey_early_suspend(struct early_suspend *h)
 #elif defined (CONFIG_USA_MODEL_SGH_I727)
 	if (get_hw_rev() >= 0x0a){
 		tkey_vdd_enable(0);
-		tkey_led_vdd_enable(0);
+		tkey_led_vdd_enable(0);				
 		gpio_direction_output(GPIO_TOUCHKEY_SCL, 0);
 		gpio_free(GPIO_TOUCHKEY_SCL);
 		gpio_direction_output(GPIO_TOUCHKEY_SDA, 0);
@@ -783,7 +686,7 @@ static void sec_touchkey_early_suspend(struct early_suspend *h)
 		}
 #elif defined (CONFIG_USA_MODEL_SGH_I717) || defined(CONFIG_USA_MODEL_SGH_I757) || defined(CONFIG_CAN_MODEL_SGH_I757M)
 		tkey_vdd_enable(0);
-		tkey_led_vdd_enable(0);
+		tkey_led_vdd_enable(0);				
 		gpio_direction_output(GPIO_TOUCHKEY_SCL, 0);
 		gpio_free(GPIO_TOUCHKEY_SCL);
 		gpio_direction_output(GPIO_TOUCHKEY_SDA, 0);
@@ -791,7 +694,7 @@ static void sec_touchkey_early_suspend(struct early_suspend *h)
 #elif defined (CONFIG_KOR_MODEL_SHV_E110S)
 	if (get_hw_rev() >= 0x04){
 		tkey_vdd_enable(0);
-		tkey_led_vdd_enable(0);
+		tkey_led_vdd_enable(0);				
 		gpio_direction_output(GPIO_TOUCHKEY_SCL, 0);
 		gpio_free(GPIO_TOUCHKEY_SCL);
 		gpio_direction_output(GPIO_TOUCHKEY_SDA, 0);
@@ -802,7 +705,7 @@ static void sec_touchkey_early_suspend(struct early_suspend *h)
 		gpio_direction_output(GPIO_TOUCHKEY_SCL, 0);
 		gpio_free(GPIO_TOUCHKEY_SCL);
 		gpio_direction_output(GPIO_TOUCHKEY_SDA, 0);
-		gpio_free(GPIO_TOUCHKEY_SDA);
+		gpio_free(GPIO_TOUCHKEY_SDA);		
 #elif defined (CONFIG_JPN_MODEL_SC_03D)
 	if (get_hw_rev() >= 0x02){
 		tkey_vdd_enable(0);
@@ -811,14 +714,7 @@ static void sec_touchkey_early_suspend(struct early_suspend *h)
 		gpio_free(GPIO_TOUCHKEY_SCL);
 		gpio_direction_output(GPIO_TOUCHKEY_SDA, 0);
 		gpio_free(GPIO_TOUCHKEY_SDA);
-		}
-#elif defined(CONFIG_JPN_MODEL_SC_05D)
-		tkey_vdd_enable(0);
-		gpio_direction_output(GPIO_TOUCHKEY_SCL, 0);
-		gpio_free(GPIO_TOUCHKEY_SCL);
-		gpio_direction_output(GPIO_TOUCHKEY_SDA, 0);
-		gpio_free(GPIO_TOUCHKEY_SDA);		
-#endif
+		}		 
 #endif
 	for (index = 1; index< sizeof(touchkey_keycode)/sizeof(*touchkey_keycode); index++)
 	{
@@ -827,65 +723,55 @@ static void sec_touchkey_early_suspend(struct early_suspend *h)
 			input_report_key(touchkey_driver->input_dev, touchkey_keycode[index], 0);
 			input_sync(touchkey_driver->input_dev);
 			printk ("[TEKY] suspend: release unreleased keycode: [%d]\n", touchkey_keycode[index]);
-		}
+		}			
 	}
 	touchkey_pressed = 0;
 	touchkey_enable = 0;
 
 #if defined (CONFIG_KOR_MODEL_SHV_E160L)\
-|| defined (CONFIG_KOR_MODEL_SHV_E110S)
+|| defined (CONFIG_KOR_MODEL_SHV_E110S) 
 	press_check = 0;
 #endif
-    mutex_unlock(&touchkey_driver->mutex);
 }
 
-static void sec_touchkey_early_resume(struct early_suspend *h)
+static void melfas_touchkey_early_resume(struct early_suspend *h)
 {
-#if defined (CONFIG_EUR_MODEL_GT_I9210) || defined(CONFIG_USA_MODEL_SGH_I577) || defined(CONFIG_CAN_MODEL_SGH_I577R) || defined (CONFIG_USA_MODEL_SGH_T769) || defined (CONFIG_USA_MODEL_SGH_T989)
+#if defined (CONFIG_EUR_MODEL_GT_I9210) || defined(CONFIG_USA_MODEL_SGH_I577) || defined(CONFIG_CAN_MODEL_SGH_I577R) || defined (CONFIG_USA_MODEL_SGH_T769)
  	int ret =0;
-#endif
-        mutex_lock(&touchkey_driver->mutex);
-
+#endif 	
 	set_touchkey_debug('R');
-	printk(KERN_DEBUG "[TKEY] sec_touchkey_early_resume\n");
+	printk(KERN_DEBUG "[TKEY] melfas_touchkey_early_resume\n");
+
+#if defined(CONFIG_GENERIC_BLN)
+	if (touchkey_enable == -3) {
+		cancel_bln_activity();
+	} else
+#endif
 	if (touchkey_enable < 0) {
 		printk("[TKEY] %s touchkey_enable: %d\n", __FUNCTION__, touchkey_enable);
-                mutex_unlock(&touchkey_driver->mutex);
 		return;
 	}
-
-#ifdef CONFIG_TOUCH_CYPRESS_SWEEP2WAKE
-  if (s2w_switch > 0) {
-    scr_suspended = false;
-  }
-#endif
 
 #if defined (CONFIG_USA_MODEL_SGH_T989) || defined (CONFIG_USA_MODEL_SGH_T769)
 	if (get_hw_rev() >= 0x0d){
 		tkey_vdd_enable(1);
-		ret = gpio_request(GPIO_TOUCHKEY_SCL, "TKEY_SCL");
-		if (ret) {
-				pr_err("%s: request GPIO %s err %d.", __func__, "TKEY_SCL", ret);
-		}
+		gpio_request(GPIO_TOUCHKEY_SCL, "TKEY_SCL");
 		gpio_direction_input(GPIO_TOUCHKEY_SCL);
-		ret = gpio_request(GPIO_TOUCHKEY_SDA, "TKEY_SDA");
-		if (ret) {
-				pr_err("%s: request GPIO %s err %d.", __func__, "TKEY_SDA", ret);
-		}
+		gpio_request(GPIO_TOUCHKEY_SDA, "TKEY_SDA");
 		gpio_direction_input(GPIO_TOUCHKEY_SDA);
 		}
 #elif defined(CONFIG_USA_MODEL_SGH_I577) || defined(CONFIG_CAN_MODEL_SGH_I577R)
-
+		
 			tkey_vdd_enable(1);
 			ret = gpio_request(GPIO_TOUCHKEY_SCL, "TKEY_SCL");
 			if (ret) {
 				pr_err("%s: request GPIO %s err %d.", __func__, "TKEY_SCL", ret);
-			}
+			}		
 			gpio_direction_input(GPIO_TOUCHKEY_SCL);
 			ret = gpio_request(GPIO_TOUCHKEY_SDA, "TKEY_SDA");
 			if (ret) {
 				pr_err("%s: request GPIO %s err %d.", __func__, "TKEY_SDA", ret);
-			}
+			}		
 			gpio_direction_input(GPIO_TOUCHKEY_SDA);
 #elif defined (CONFIG_EUR_MODEL_GT_I9210)
 	if (get_hw_rev() >= 0x07){
@@ -899,7 +785,7 @@ static void sec_touchkey_early_resume(struct early_suspend *h)
 		if (ret) {
 			pr_err("%s: request GPIO %s err %d.", __func__, "TKEY_SDA", ret);
 		}
-		gpio_direction_input(GPIO_TOUCHKEY_SDA);
+		gpio_direction_input(GPIO_TOUCHKEY_SDA);		
 	}
 #elif defined (CONFIG_USA_MODEL_SGH_I727)
 	if (get_hw_rev() >= 0x06){
@@ -925,12 +811,12 @@ static void sec_touchkey_early_resume(struct early_suspend *h)
 		gpio_request(GPIO_TOUCHKEY_SDA, "TKEY_SDA");
 		gpio_direction_input(GPIO_TOUCHKEY_SDA);
 		}
-#elif defined(CONFIG_KOR_MODEL_SHV_E160L) || defined(CONFIG_JPN_MODEL_SC_05D)
+#elif defined(CONFIG_KOR_MODEL_SHV_E160L)
 		tkey_vdd_enable(1);
 		gpio_request(GPIO_TOUCHKEY_SCL, "TKEY_SCL");
 		gpio_direction_input(GPIO_TOUCHKEY_SCL);
 		gpio_request(GPIO_TOUCHKEY_SDA, "TKEY_SDA");
-		gpio_direction_input(GPIO_TOUCHKEY_SDA);
+		gpio_direction_input(GPIO_TOUCHKEY_SDA);		
 #elif defined (CONFIG_JPN_MODEL_SC_03D)
 	if (get_hw_rev() >= 0x02){
 		tkey_vdd_enable(1);
@@ -938,19 +824,18 @@ static void sec_touchkey_early_resume(struct early_suspend *h)
 		gpio_direction_input(GPIO_TOUCHKEY_SCL);
 		gpio_request(GPIO_TOUCHKEY_SDA, "TKEY_SDA");
 		gpio_direction_input(GPIO_TOUCHKEY_SDA);
-		}
+		}		 
 #endif // defined (CONFIG_USA_MODEL_SGH_T989)||defined (CONFIG_USA_MODEL_SGH_I727)
 	init_hw();
 
 if(touchled_cmd_reversed) {
 			touchled_cmd_reversed = 0;
-#if defined (CONFIG_USA_MODEL_SGH_I717) || defined (CONFIG_USA_MODEL_SGH_T769) || defined(CONFIG_USA_MODEL_SGH_I577)\
-	|| defined(CONFIG_CAN_MODEL_SGH_I577R) || defined (CONFIG_KOR_MODEL_SHV_E160L)
+#if defined (CONFIG_USA_MODEL_SGH_I717)	|| defined (CONFIG_USA_MODEL_SGH_T769) || defined(CONFIG_USA_MODEL_SGH_I577) || defined(CONFIG_CAN_MODEL_SGH_I577R) || defined(CONFIG_USA_MODEL_SGH_I727) || defined(CONFIG_USA_MODEL_SGH_T989)		
 			msleep(100);
 #endif
-	//		msleep(300);
+	//		msleep(300);		
 			if(!touchkey_enable )
-				touchkey_enable = 1;
+				touchkey_enable = 1; 
 			i2c_touchkey_write((u8*)&touchkey_led_status, 1);
 			printk("[TKEY] LED RESERVED !! LED returned on touchkey_led_status = %d\n", touchkey_led_status);
 	}
@@ -967,72 +852,101 @@ if(touchled_cmd_reversed) {
 
 		msleep(100);
 		if(!touchkey_enable )
-			touchkey_enable = 1;
-		i2c_touchkey_write((u8*)&touchkey_led_status, 1);
+			touchkey_enable = 1; 
+		i2c_touchkey_write(&touchkey_led_status, 1);
 		printk("[TKEY] NOT RESERVED!! LED returned on touchkey_led_status = %d\n", touchkey_led_status);
 	}
 #endif
 
 #if defined (CONFIG_KOR_MODEL_SHV_E110S)
-			if (get_hw_rev() >=0x04 ){
-				tkey_led_vdd_enable(1);
+			if (get_hw_rev() >=0x04 ){		
+				tkey_led_vdd_enable(1);	
 			}
 #elif defined(CONFIG_USA_MODEL_SGH_I577) || defined(CONFIG_CAN_MODEL_SGH_I577R)
 				tkey_led_vdd_enable(1);
-
+			
 #elif defined(CONFIG_KOR_MODEL_SHV_E160L)
-			if (get_hw_rev() >=0x02){
-				tkey_led_vdd_enable(1);
-			}
+			if (get_hw_rev() >=0x02){		
+				tkey_led_vdd_enable(1); 	
+			}	
 #elif defined (CONFIG_JPN_MODEL_SC_03D)
-			if (get_hw_rev() >=0x02){
-				tkey_led_vdd_enable(1);
+			if (get_hw_rev() >=0x02){		
+				tkey_led_vdd_enable(1); 	
 			}
 #elif defined (CONFIG_EUR_MODEL_GT_I9210)
-			if (get_hw_rev() >=0x07){
-				tkey_led_vdd_enable(1);
+			if (get_hw_rev() >=0x07){		
+				tkey_led_vdd_enable(1); 	
 			}
 #elif defined (CONFIG_USA_MODEL_SGH_I727)
-			if (get_hw_rev() >=0x0a){
-				tkey_led_vdd_enable(1);
+			if (get_hw_rev() >=0x0a){		
+				tkey_led_vdd_enable(1); 	
 			}
-#elif defined (CONFIG_USA_MODEL_SGH_I717) 
-			if (false){
-				tkey_led_vdd_enable(1);
+#elif defined (CONFIG_USA_MODEL_SGH_I717)
+			if (false){		
+				tkey_led_vdd_enable(1); 	
 			}
-
-#elif defined(CONFIG_USA_MODEL_SGH_I757) || defined(CONFIG_CAN_MODEL_SGH_I757M)
+			
+#elif defined(CONFIG_USA_MODEL_SGH_I757) || defined(CONFIG_CAN_MODEL_SGH_I757M)			
 				tkey_led_vdd_enable(1);
 
 #elif defined (CONFIG_USA_MODEL_SGH_T989)|| defined (CONFIG_USA_MODEL_SGH_T769)
 			if (get_hw_rev() >=0x0d){		
 				tkey_led_vdd_enable(1); 	
 			}
-#endif
+#endif		
 
 #if defined (CONFIG_USA_MODEL_SGH_I717) || defined (CONFIG_KOR_MODEL_SHV_E160L)\
 	|| defined (CONFIG_USA_MODEL_SGH_T769)|| defined(CONFIG_USA_MODEL_SGH_I577)|| defined(CONFIG_CAN_MODEL_SGH_I577R)\
-	|| defined(CONFIG_USA_MODEL_SGH_I757) || defined(CONFIG_CAN_MODEL_SGH_I757M)
-
-#ifdef CONFIG_TOUCH_CYPRESS_SWEEP2WAKE
-  if (s2w_switch > 0) {
-    disable_irq_wake(IRQ_TOUCHKEY_INT);
-  } else {
-#endif
+	|| defined(CONFIG_USA_MODEL_SGH_I757) || defined(CONFIG_CAN_MODEL_SGH_I757M)|| defined(CONFIG_USA_MODEL_SGH_I727)\
+	|| defined(CONFIG_USA_MODEL_SGH_T989) 
 		enable_irq(IRQ_TOUCHKEY_INT);
-#ifdef CONFIG_TOUCH_CYPRESS_SWEEP2WAKE
-  }
-#endif
 		touchkey_enable = 1;
 		msleep(50);
-		touchkey_auto_calibration(1/*on*/);
+		touchkey_auto_calibration(1/*on*/);	
 #else
 schedule_delayed_work(&touch_resume_work, msecs_to_jiffies(500));
 #endif
 
-        mutex_unlock(&touchkey_driver->mutex);
 }
 #endif				// End of CONFIG_HAS_EARLYSUSPEND
+
+#if defined(CONFIG_GENERIC_BLN)
+static void cypress_touchkey_enable_backlight(void) {
+    signed char int_data[] ={0x10};
+    i2c_touchkey_write(int_data, 1);
+}
+
+static void cypress_touchkey_disable_backlight(void) {
+    signed char int_data[] ={0x20};
+    i2c_touchkey_write(int_data, 1);
+}
+
+static bool cypress_touchkey_enable_led_notification(void) {
+    if (touchkey_enable)
+        return false;
+
+    tkey_vdd_enable(1);
+    msleep(50);
+    tkey_led_vdd_enable(1);
+
+    touchkey_enable = -3;
+    return true;
+}
+
+static void cypress_touchkey_disable_led_notification(void) {
+    tkey_led_vdd_enable(0);
+    tkey_vdd_enable(0);
+
+    touchkey_enable = 0;
+}
+
+static struct bln_implementation cypress_touchkey_bln = {
+    .enable = cypress_touchkey_enable_led_notification,
+    .disable = cypress_touchkey_disable_led_notification,
+    .on = cypress_touchkey_enable_backlight,
+    .off = cypress_touchkey_disable_backlight,
+};
+#endif
 
 extern int mcsdl_download_binary_data(void);
 static int i2c_touchkey_probe(struct i2c_client *client, const struct i2c_device_id *id)
@@ -1049,7 +963,8 @@ static int i2c_touchkey_probe(struct i2c_client *client, const struct i2c_device
        int touch_auto_calibration_on_off = 0;
 	u8 data[6];
 #endif
-	printk("[TKEY] sec i2c_touchkey_probe\n");
+	printk("[TKEY] melfas i2c_touchkey_probe\n");
+	printk(KERN_ERR "OKGA [TKEY] melfas i2c_touchkey_probe\n");
 
 	touchkey_driver =
 	    kzalloc(sizeof(struct i2c_touchkey_driver), GFP_KERNEL);
@@ -1060,7 +975,7 @@ static int i2c_touchkey_probe(struct i2c_client *client, const struct i2c_device
 
 	touchkey_driver->client = client;
 	touchkey_driver->client->irq = IRQ_TOUCHKEY_INT;
-	strlcpy(touchkey_driver->client->name, "sec-touchkey", I2C_NAME_SIZE);
+	strlcpy(touchkey_driver->client->name, "melfas-touchkey", I2C_NAME_SIZE);
 
 	// i2c_set_clientdata(client, state);
 	input_dev = input_allocate_device();
@@ -1071,51 +986,51 @@ static int i2c_touchkey_probe(struct i2c_client *client, const struct i2c_device
 	touchkey_driver->input_dev = input_dev;
 
 	input_dev->name = DEVICE_NAME;
-	input_dev->phys = "sec-touchkey/input0";
+	input_dev->phys = "melfas-touchkey/input0";
 	input_dev->id.bustype = BUS_HOST;
 
 #if defined (CONFIG_KOR_MODEL_SHV_E110S)
-	if(get_hw_rev() == 0x01) {
+	if(get_hw_rev() == 0x01) {	
 	  	touchkey_keycode[1] = KEY_BACK;
-	  	touchkey_keycode[2] = KEY_MENU;
+	  	touchkey_keycode[2] = KEY_MENU;  	
   	} else if ((get_hw_rev() == 0x03)||(get_hw_rev() == 0x04)){
 		touchkey_keycode[1] = KEY_MENU;
-		touchkey_keycode[2] = KEY_HOME;
-		touchkey_keycode[3] = KEY_BACK;
-		touchkey_keycode[4] = KEY_SEARCH;
+		touchkey_keycode[2] = KEY_HOME; 	
+		touchkey_keycode[3] = KEY_BACK; 	
+		touchkey_keycode[4] = KEY_SEARCH;	
 	} else {
 	  	touchkey_keycode[1] = KEY_MENU;
-	  	touchkey_keycode[2] = KEY_BACK;
+	  	touchkey_keycode[2] = KEY_BACK;	 
 	}
 #elif defined (CONFIG_KOR_SHV_E120L_WXGA)
 	  	touchkey_keycode[1] = KEY_MENU;
-	  	touchkey_keycode[2] = KEY_BACK;
+	  	touchkey_keycode[2] = KEY_BACK; 
 #elif defined(CONFIG_KOR_MODEL_SHV_E160L)
-	if(get_hw_rev() >= 0x02) {
+	if(get_hw_rev() >= 0x02) {	
 		touchkey_keycode[1] = KEY_MENU;
-		touchkey_keycode[2] = KEY_BACK;
+		touchkey_keycode[2] = KEY_BACK; 	
      	} else {
 		touchkey_keycode[1] = KEY_MENU;
-		touchkey_keycode[2] = KEY_BACK;
-		}
+		touchkey_keycode[2] = KEY_BACK; 	
+		}		
 #elif  defined (CONFIG_JPN_MODEL_SC_03D)
 	if (get_hw_rev() == 0x02)
 	{
 	  	touchkey_keycode[1] = KEY_MENU;
-	  	touchkey_keycode[2] = KEY_HOME;
-		touchkey_keycode[3] = KEY_BACK;
-		touchkey_keycode[4] = KEY_SEARCH;
+	  	touchkey_keycode[2] = KEY_HOME;  	
+		touchkey_keycode[3] = KEY_BACK;  	
+		touchkey_keycode[4] = KEY_SEARCH;  	
 	}
 	else
 	{
 		touchkey_keycode[1] = KEY_MENU;
-		touchkey_keycode[2] = KEY_BACK;
+		touchkey_keycode[2] = KEY_BACK; 	
 	}
 #elif  defined (CONFIG_EUR_MODEL_GT_I9210)
 	if (get_hw_rev() != 0x05 )
 	{
 		touchkey_keycode[1] = KEY_MENU;
-		touchkey_keycode[2] = KEY_BACK;
+		touchkey_keycode[2] = KEY_BACK; 	
 	}
 #elif defined (CONFIG_JPN_MODEL_SC_05D)
 //TODO Check HW REV for JPN
@@ -1130,12 +1045,12 @@ static int i2c_touchkey_probe(struct i2c_client *client, const struct i2c_device
 	set_bit(touchkey_keycode[1], input_dev->keybit);
 	set_bit(touchkey_keycode[2], input_dev->keybit);
 #if defined (CONFIG_USA_MODEL_SGH_I727) || defined (CONFIG_USA_MODEL_SGH_T989) || defined (CONFIG_JPN_MODEL_SC_03D) \
-|| defined (CONFIG_KOR_MODEL_SHV_E110S) || defined (CONFIG_USA_MODEL_SGH_I717) || defined(CONFIG_KOR_MODEL_SHV_E160L) || defined (CONFIG_USA_MODEL_SGH_T769)\
+|| defined (CONFIG_KOR_MODEL_SHV_E110S) || defined (CONFIG_USA_MODEL_SGH_I717) || defined(CONFIG_KOR_MODEL_SHV_E160L) || defined (CONFIG_USA_MODEL_SGH_T769)\ 
 || defined(CONFIG_USA_MODEL_SGH_I577) || defined(CONFIG_CAN_MODEL_SGH_I577R)\
 || defined(CONFIG_USA_MODEL_SGH_I757) || defined(CONFIG_CAN_MODEL_SGH_I757M)
 	set_bit(touchkey_keycode[3], input_dev->keybit);
 	set_bit(touchkey_keycode[4], input_dev->keybit);
-#endif
+#endif	
 
 	err = input_register_device(input_dev);
 	if (err) {
@@ -1143,17 +1058,13 @@ static int i2c_touchkey_probe(struct i2c_client *client, const struct i2c_device
 		return err;
 	}
 
-        // initialize the mutex and lock to allow initialization to finish uninterrupted
-	mutex_init(&touchkey_driver->mutex);
-	mutex_lock(&touchkey_driver->mutex);
-
     //	gpio_pend_mask_mem = ioremap(INT_PEND_BASE, 0x10);  //temp ks
     INIT_DELAYED_WORK(&touch_resume_work, touchkey_resume_func);
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
     //	touchkey_driver->early_suspend.level = EARLY_SUSPEND_LEVEL_STOP_DRAWING + 1;
-    touchkey_driver->early_suspend.suspend = sec_touchkey_early_suspend;
-    touchkey_driver->early_suspend.resume = sec_touchkey_early_resume;
+    touchkey_driver->early_suspend.suspend = melfas_touchkey_early_suspend;
+    touchkey_driver->early_suspend.resume = melfas_touchkey_early_resume;
     register_early_suspend(&touchkey_driver->early_suspend);
 #endif
 
@@ -1163,43 +1074,42 @@ static int i2c_touchkey_probe(struct i2c_client *client, const struct i2c_device
 
 	if (err) {
 		printk(KERN_ERR "%s Can't allocate irq .. %d\n", __FUNCTION__, err);
-                mutex_unlock(&touchkey_driver->mutex);
 		return -EBUSY;
 	}
-#if defined(CONFIG_USA_MODEL_SGH_T989)||defined (CONFIG_USA_MODEL_SGH_I727) || defined (CONFIG_USA_MODEL_SGH_T769) || defined(CONFIG_USA_MODEL_SGH_I577)\
+#if defined(CONFIG_USA_MODEL_SGH_T989)||defined (CONFIG_USA_MODEL_SGH_I727) || defined (CONFIG_USA_MODEL_SGH_T769) || defined(CONFIG_USA_MODEL_SGH_I577)\ 
 	|| defined(CONFIG_CAN_MODEL_SGH_I577R) || defined(CONFIG_USA_MODEL_SGH_I757) || defined(CONFIG_CAN_MODEL_SGH_I757M)
     {
       touchkey_auto_calibration(1/*on*/);
     }
-    mdelay(30);
+    mdelay(30);	
     i2c_touchkey_read	(0x00, data, 6);
     touch_auto_calibration_on_off = (data[5] & 0x80)>>7;
-    printk("[TKEY] after touchkey_auto_calibration result = %d \n",touch_auto_calibration_on_off);
-
+    printk("after touchkey_auto_calibration result = %d \n",touch_auto_calibration_on_off);
+    
 #elif defined (CONFIG_USA_MODEL_SGH_I717)
-
+	    
 	    err = touchkey_auto_calibration(1/*on*/);
 	    if (err < 0) {
 		    printk(KERN_ERR"[TouchKey] probe autocalibration fail\n");
 		    return err;
-	    }
-	    mdelay(30);
+	    }	    
+	    mdelay(30); 
 	    i2c_touchkey_read	    (0x00, data, 6);
 	    touch_auto_calibration_on_off = (data[5] & 0x80)>>7;
-	    printk("[TKEY] after touchkey_auto_calibration result = %d \n",touch_auto_calibration_on_off);
+	    printk("after touchkey_auto_calibration result = %d \n",touch_auto_calibration_on_off);
 
 #elif defined (CONFIG_KOR_MODEL_SHV_E110S)
 if (get_hw_rev() >=0x02) {
     touchkey_auto_calibration(1/*on*/);
-	mdelay(30);
+	mdelay(30);	
 	i2c_touchkey_read	(0x00, data, 6);
     touch_auto_calibration_on_off = (data[5] & 0x80)>>7;
-    printk("[TKEY] after touchkey_auto_calibration result = %d \n",touch_auto_calibration_on_off);
+    printk("after touchkey_auto_calibration result = %d \n",touch_auto_calibration_on_off);
 }
 #elif defined(CONFIG_KOR_MODEL_SHV_E160L)
 if (get_hw_rev() >=0x02) {
     touchkey_auto_calibration(1/*on*/);
-	mdelay(30);
+	mdelay(30);	
 	i2c_touchkey_read	(0x00, data, 6);
     touch_auto_calibration_on_off = (data[5] & 0x80)>>7;
     printk("[TKEY] after touchkey_auto_calibration result = %d \n",touch_auto_calibration_on_off);
@@ -1207,15 +1117,16 @@ if (get_hw_rev() >=0x02) {
 #elif defined (CONFIG_JPN_MODEL_SC_03D)
 if (get_hw_rev() >=0x02) {
     touchkey_auto_calibration(1/*on*/);
-	mdelay(30);
+	mdelay(30);	
 	i2c_touchkey_read	(0x00, data, 6);
     touch_auto_calibration_on_off = (data[5] & 0x80)>>7;
-    printk("[TKEY] after touchkey_auto_calibration result = %d \n",touch_auto_calibration_on_off);
+    printk("after touchkey_auto_calibration result = %d \n",touch_auto_calibration_on_off);
 }
 #endif
 	set_touchkey_debug('K');
-
-        mutex_unlock(&touchkey_driver->mutex);
+#if defined(CONFIG_GENERIC_BLN)
+    register_bln_implementation(&cypress_touchkey_bln);
+#endif
 	return 0;
 }
 
@@ -1227,54 +1138,68 @@ static void init_hw(void)
 		struct pm_gpio cfg;
 	};
 
-	struct pm8058_gpio_cfg touchkey_int_cfg =
+#if	defined (CONFIG_USA_MODEL_SGH_I727)
+	struct pm8058_gpio_cfg touchkey_int_cfg = 
 	{
-	  PM8058_GPIO_PM_TO_SYS(12), // id-1
+	  PM8058_GPIO_PM_TO_SYS(12), // id-1		
 		{
-			.direction	  = PM_GPIO_DIR_IN,
-			.pull		   = PM_GPIO_PULL_NO,//PM_GPIO_PULL_NO,
+			.direction      = PM_GPIO_DIR_IN,
+			.pull           = PM_GPIO_PULL_NO,//PM_GPIO_PULL_NO,
+			.vin_sel        = 2,
+			.function       = PM_GPIO_FUNC_NORMAL,
+			.inv_int_pol    = 0,
+		},
+	};
+#else
+	struct pm8058_gpio_cfg touchkey_int_cfg = 
+	{
+		13,
+		{
+			.direction		= PM_GPIO_DIR_IN,
+			.pull			= PM_GPIO_PULL_NO,//PM_GPIO_PULL_NO,
 			.vin_sel		= 2,
-			.function	   = PM_GPIO_FUNC_NORMAL,
+			.function		= PM_GPIO_FUNC_NORMAL,
 			.inv_int_pol	= 0,
 		},
 	};
+#endif
 
 	#if defined(CONFIG_KOR_MODEL_SHV_E160L)
     msleep(200);
-	#endif
+	#endif 
 
 	rc = pm8xxx_gpio_config(touchkey_int_cfg.gpio, &touchkey_int_cfg.cfg);
 	if (rc < 0) {
 		pr_err("%s pmic gpio config failed\n", __func__);
 		return;
 	}
-
+	
 #if defined (CONFIG_KOR_MODEL_SHV_E110S)
 	if (get_hw_rev() >= 0x06){
-		irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_RISING);
-	} else {
+		irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_RISING);	
+	} else { 
 		irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_FALLING);
 	}
 #elif defined (CONFIG_JPN_MODEL_SC_03D)
 	if (get_hw_rev() >= 0x05){
-		irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_RISING);
-	} else {
+		irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_RISING);    
+	} else { 
 		irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_FALLING);
 	}
 #elif defined(CONFIG_USA_MODEL_SGH_I577) || defined(CONFIG_CAN_MODEL_SGH_I577R)
-
+				
 		irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_FALLING);
-
+					
 #elif defined (CONFIG_EUR_MODEL_GT_I9210)
 	if (get_hw_rev() >= 0x07){
-		irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_RISING);
-	} else {
+		irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_RISING);	
+	} else { 
 		irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_FALLING);
 	}
 #elif defined (CONFIG_USA_MODEL_SGH_I727)
 	if (get_hw_rev() >= 0x0a){
-		irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_RISING);
-	} else {
+		irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_RISING);	
+	} else { 
 		irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_FALLING);
 	}
 #elif defined (CONFIG_USA_MODEL_SGH_I717) || defined(CONFIG_USA_MODEL_SGH_I757) || defined(CONFIG_CAN_MODEL_SGH_I757M)
@@ -1283,14 +1208,14 @@ static void init_hw(void)
 
 #elif defined (CONFIG_USA_MODEL_SGH_T989) || defined (CONFIG_USA_MODEL_SGH_T769)
 	if (get_hw_rev() >= 0x0d){
-		irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_RISING);
-	} else {
-		irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_FALLING);
+		irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_RISING);	
+	} else { 
+		irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_FALLING);  
 	}
 #elif defined(CONFIG_KOR_MODEL_SHV_E160L)
 	irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_FALLING);
 
-#elif defined (CONFIG_JPN_MODEL_SC_05D)
+#elif defined (CONFIG_JPN_MODEL_SC_05D) 
 	irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_FALLING);
 
 #else
@@ -1327,7 +1252,7 @@ struct file_operations touchkey_update_fops = {
 
 static struct miscdevice touchkey_update_device = {
 	.minor = MISC_DYNAMIC_MINOR,
-	.name = "sec_touchkey",
+	.name = "melfas_touchkey",
 	.fops = &touchkey_update_fops,
 };
 
@@ -1337,12 +1262,10 @@ static ssize_t touch_version_read(struct device *dev,
 	char data[3] = { 0, };
 	int count;
 
-	mutex_lock(&touchkey_driver->mutex);
 	init_hw();
 	if (get_touchkey_firmware(data) != 0)
 		i2c_touchkey_read(KEYCODE_REG, data, 3);
 	count = sprintf(buf, "0x%x\n", data[1]);
-	mutex_unlock(&touchkey_driver->mutex);
 
 	printk("[TKEY] touch_version_read 0x%x\n", data[1]);
 	return count;
@@ -1353,6 +1276,70 @@ static ssize_t touch_version_write(struct device *dev, struct device_attribute *
 	//buf[size]=0;
 	printk("input data --> %s\n", buf);
 	return size;
+}
+
+static ssize_t touch_recommend_read(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	char data[3] = { 0, };
+	int count;
+#if defined (CONFIG_KOR_MODEL_SHV_E110S)
+		if ((get_hw_rev() == 0x03) || (get_hw_rev() == 0x04)){
+			data[1] = 0x08;
+		} else if (get_hw_rev() == 0x05){
+			data[1] = 0x00;
+		} else if (get_hw_rev() == 0x06){
+			data[1] = 0x02;
+		} else if (get_hw_rev() >= 0x07){
+			data[1] = 0x07;
+		}
+#elif defined(CONFIG_KOR_MODEL_SHV_E160L)
+    printk(KERN_ERR "data_mdule_rev = %x\n",data_mdule_rev);
+	if (get_hw_rev() >=0x02 ){
+		if(data_mdule_rev ==0x02)
+			data[1] = 0x03;
+		else
+			data[1] = 0x07;
+        } else{
+		data[1] = 0x00;
+	}	
+#elif defined(CONFIG_USA_MODEL_SGH_I577) || defined(CONFIG_CAN_MODEL_SGH_I577R)
+		data[1] = BUIL_FW_VER;
+#elif defined (CONFIG_EUR_MODEL_GT_I9210)
+	if (get_hw_rev() >=0x07)
+		data[1] = 0x07;
+	else
+		data[1] = 0x00;
+#elif defined (CONFIG_USA_MODEL_SGH_I727)
+        if (get_hw_rev() >=0x0a)
+                data[1] = 0x12;
+		else
+                data[1] = 0x07;
+#elif defined(CONFIG_USA_MODEL_SGH_I757)  || defined(CONFIG_CAN_MODEL_SGH_I757M)    
+	if (get_hw_rev() >= 0x04)
+		data[1] = 0x06;
+	else 
+		data[1] = 0x03;		
+#elif defined (CONFIG_USA_MODEL_SGH_I717)
+                data[1] = 0x04;
+#elif defined (CONFIG_USA_MODEL_SGH_T769)
+        data[1] = BUILTIN_FW_VER;
+#elif defined (CONFIG_USA_MODEL_SGH_T989)
+        if (get_hw_rev() >= 0x0d)
+                data[1] = 0x13;
+      else if (get_hw_rev() >= 0x09)
+	  	data[1] = 0x11;
+         else if (get_hw_rev() == 0x08)
+		   data[1] = 0x0f;
+         else if (get_hw_rev() == 0x05)
+		   data[1] = 0x0c;
+#elif defined (CONFIG_JPN_MODEL_SC_03D)
+	data[1] = firm_version;
+#endif
+
+	count = sprintf(buf, "0x%x\n", data[1]);
+
+	printk("touch_recommend_read 0x%x\n", data[1]);
+	return count;
 }
 
 static ssize_t touch_recommend_write(struct device *dev, struct device_attribute *attr, const char *buf, size_t size)
@@ -1433,17 +1420,14 @@ static ssize_t touch_led_control(struct device *dev, struct device_attribute *at
 {
 	int int_data = 0;
 	int errnum = 0;
-
-	mutex_lock(&touchkey_driver->mutex);
-
 #if defined(CONFIG_KOR_MODEL_SHV_E160L)
 	if(touchkey_connected==0){
 		printk(KERN_ERR "[TKEY] led_control return connect_error\n");
-		goto unlock;
+		return size;
 		}
 	if( touchkey_downloading_status ){
 		printk(KERN_ERR "[TKEY] led_control return update_status_error or downloading now! \n");
-		goto unlock;
+		return size;
 	}
 #endif
 	if(buf != NULL){
@@ -1456,8 +1440,8 @@ static ssize_t touch_led_control(struct device *dev, struct device_attribute *at
 			printk(KERN_ERR "[TKEY] led_control_err data =%c \n",buf[0]);
 		}
 #if defined(CONFIG_USA_MODEL_SGH_I577) || defined(CONFIG_CAN_MODEL_SGH_I577R)
-		int_data = int_data *0x10;
-#elif defined(CONFIG_KOR_MODEL_SHV_E110S) || defined (CONFIG_USA_MODEL_SGH_T989) || defined (CONFIG_JPN_MODEL_SC_03D)\
+		int_data = int_data *0x10;		
+#elif defined(CONFIG_KOR_MODEL_SHV_E110S) || defined (CONFIG_USA_MODEL_SGH_T989) || defined (CONFIG_JPN_MODEL_SC_03D)\ 
 	|| defined (CONFIG_USA_MODEL_SGH_I727) || defined (CONFIG_USA_MODEL_SGH_T769)
 #if defined(CONFIG_EUR_MODEL_GT_I9210)
 	if (get_hw_rev() >=0x05 )
@@ -1468,38 +1452,31 @@ static ssize_t touch_led_control(struct device *dev, struct device_attribute *at
 #else //E110S
 	if (get_hw_rev() >=0x02 )
 #endif
-      {
+      {     
 		int_data = int_data *0x10;
 	}
-#elif defined(CONFIG_KOR_MODEL_SHV_E160L)\
+#elif defined(CONFIG_KOR_MODEL_SHV_E160L)\ 
    || defined (CONFIG_USA_MODEL_SGH_I717) || defined(CONFIG_USA_MODEL_SGH_I757) || defined(CONFIG_CAN_MODEL_SGH_I757M)
 		int_data = int_data *0x10;
 #else
 
 #endif
-
-#if defined (CONFIG_JPN_MODEL_SC_05D)
-	int_data = int_data * 0x10;
-#endif
-
 		if(g_debug_switch)
-			printk(KERN_DEBUG "touch_led_control int_data: %d  \n", int_data);
+			printk(KERN_DEBUG "touch_led_control int_data: %d\n", int_data);
 
 		#if defined(CONFIG_USA_MODEL_SGH_I717)
 			if(Q1_debug_msg)
-				printk(KERN_DEBUG "touch_led_control int_data: %d  \n", int_data);
+				printk(KERN_DEBUG "touch_led_control int_data: %d\n", int_data);
 		#endif
-
+		
 		errnum = i2c_touchkey_write((u8*)&int_data, 1);
 		if(errnum==-ENODEV) {
 			touchled_cmd_reversed = 1;
-		}
+		}		
 		touchkey_led_status = int_data;
 	} else
 		printk("touch_led_control Error\n");
 
-unlock:
-	mutex_unlock(&touchkey_driver->mutex);
 	return size;
 }
 
@@ -1537,19 +1514,16 @@ static ssize_t touchkey_menu_show(struct device *dev, struct device_attribute *a
     u8 data[18] = {0, };
     int ret;
 
-    mutex_lock(&touchkey_driver->mutex);
     ret = i2c_touchkey_read(KEYCODE_REG, data, 18);
 
-    #if defined(CONFIG_KOR_MODEL_SHV_E160L)||defined(CONFIG_JPN_MODEL_SC_05D)
+    #if defined(CONFIG_KOR_MODEL_SHV_E160L)
     printk("[TKEY] %s data[12] =%d,data[13] = %d\n",__func__,data[12],data[13]);
     menu_sensitivity = ((0x00FF&data[12])<<8)|data[13];
-    #else
+    #else 
     printk("[TKEY] %s data[10] =%d,data[11] = %d\n",__func__,data[10],data[11]);
-    menu_sensitivity = ((0x00FF&data[10])<<8)|data[11];
-    #endif
-
-    mutex_unlock(&touchkey_driver->mutex);
-
+    menu_sensitivity = ((0x00FF&data[10])<<8)|data[11];	
+    #endif 
+    
     return sprintf(buf,"%d\n",menu_sensitivity);
 }
 
@@ -1558,11 +1532,9 @@ static ssize_t touchkey_home_show(struct device *dev, struct device_attribute *a
 	u8 data[18] = {0, };
 	int ret;
 
-        mutex_lock(&touchkey_driver->mutex);
 	ret = i2c_touchkey_read(KEYCODE_REG, data, 18);
 	printk("[TKEY] %s data[12] =%d,data[13] = %d\n",__func__,data[12],data[13]);
-        mutex_unlock(&touchkey_driver->mutex);
-	home_sensitivity = ((0x00FF&data[12])<<8)|data[13];
+	home_sensitivity = ((0x00FF&data[12])<<8)|data[13];		
 	return sprintf(buf,"%d\n",home_sensitivity);
 }
 
@@ -1571,48 +1543,46 @@ static ssize_t touchkey_back_show(struct device *dev, struct device_attribute *a
 	u8 data[18] = {0, };
 	int ret;
 
-        mutex_lock(&touchkey_driver->mutex);
 	ret = i2c_touchkey_read(KEYCODE_REG, data, 18);
-
+    
 #if defined (CONFIG_KOR_MODEL_SHV_E110S)
 	if (get_hw_rev() >= 0x05){
 		printk("called %s data[12] =%d,data[13] = %d\n",__func__,data[12],data[13]);
-		back_sensitivity = ((0x00FF&data[12])<<8)|data[13];
+		back_sensitivity = ((0x00FF&data[12])<<8)|data[13];		
 	} else {
 		printk("called %s data[14] =%d,data[15] = %d\n",__func__,data[14],data[15]);
-		back_sensitivity = ((0x00FF&data[14])<<8)|data[15];
+		back_sensitivity = ((0x00FF&data[14])<<8)|data[15];		
 	}
-#elif defined(CONFIG_KOR_MODEL_SHV_E160L) || defined(CONFIG_JPN_MODEL_SC_05D)
+#elif defined(CONFIG_KOR_MODEL_SHV_E160L)
     {
         printk("[TKEY] %s data[10] =%d,data[11] = %d\n",__func__,data[10],data[11]);
-        back_sensitivity = ((0x00FF&data[10])<<8)|data[11];
+        back_sensitivity = ((0x00FF&data[10])<<8)|data[11];	
     }
 #elif defined(CONFIG_JPN_MODEL_SC_03D)
 	{
 		if (get_hw_rev() >= 0x04){
 			printk("called %s data[12] =%d,data[13] = %d\n",__func__,data[12],data[13]);
-			back_sensitivity = ((0x00FF&data[12])<<8)|data[13];
+			back_sensitivity = ((0x00FF&data[12])<<8)|data[13]; 	
 		} else {
 			printk("called %s data[14] =%d,data[15] = %d\n",__func__,data[14],data[15]);
-			back_sensitivity = ((0x00FF&data[14])<<8)|data[15];
+			back_sensitivity = ((0x00FF&data[14])<<8)|data[15]; 	
 		}
 	}
 #elif defined(CONFIG_EUR_MODEL_GT_I9210)
 	{
 		if (get_hw_rev() >= 0x06){
 			printk("called %s data[12] =%d,data[13] = %d\n",__func__,data[12],data[13]);
-			back_sensitivity = ((0x00FF&data[12])<<8)|data[13];
+			back_sensitivity = ((0x00FF&data[12])<<8)|data[13]; 	
 		} else {
 			printk("called %s data[14] =%d,data[15] = %d\n",__func__,data[14],data[15]);
-			back_sensitivity = ((0x00FF&data[14])<<8)|data[15];
+			back_sensitivity = ((0x00FF&data[14])<<8)|data[15]; 	
 		}
-	}
+	} 
 #else
 	printk("called %s data[14] =%d,data[15] = %d\n",__func__,data[14],data[15]);
-	back_sensitivity = ((0x00FF&data[14])<<8)|data[15];
+	back_sensitivity = ((0x00FF&data[14])<<8)|data[15]; 	
 #endif
-        mutex_unlock(&touchkey_driver->mutex);
-
+	
 	return sprintf(buf,"%d\n",back_sensitivity);
 }
 
@@ -1621,12 +1591,10 @@ static ssize_t touchkey_search_show(struct device *dev, struct device_attribute 
 	u8 data[18] = {0, };
 	int ret;
 
-        mutex_lock(&touchkey_driver->mutex);
 	printk("called %s \n",__func__);
 	ret = i2c_touchkey_read(KEYCODE_REG, data, 18);
 	printk("called %s data[16] =%d,data[17] = %d\n",__func__,data[16],data[17]);
-        mutex_unlock(&touchkey_driver->mutex);
-	search_sensitivity = ((0x00FF&data[16])<<8)|data[17];
+	search_sensitivity = ((0x00FF&data[16])<<8)|data[17];		
 	return sprintf(buf,"%d\n",search_sensitivity);
 }
 
@@ -1635,11 +1603,9 @@ static ssize_t touchkey_threshold_show(struct device *dev, struct device_attribu
 	u8 data[18];
 	int ret;
 
-        mutex_lock(&touchkey_driver->mutex);
 	printk("called %s \n",__func__);
 	ret = i2c_touchkey_read(KEYCODE_REG, data, 18);
 	printk("called %s data[4] =%d\n",__func__,data[4]);
-        mutex_unlock(&touchkey_driver->mutex);
 	return sprintf(buf,"%d\n",data[4]);
 }
 
@@ -1648,11 +1614,9 @@ static ssize_t touchkey_raw_data0_show(struct device *dev, struct device_attribu
 	u8 data[26];
 	int ret;
 
-        mutex_lock(&touchkey_driver->mutex);
 	printk("called %s \n",__func__);
 	ret = i2c_touchkey_read(KEYCODE_REG, data, 26);
 	printk("called %s data[18] =%d,data[19] = %d\n",__func__,data[18],data[19]);
-        mutex_unlock(&touchkey_driver->mutex);
 	raw_data0 = ((0x00FF&data[18])<<8)|data[19];
 	return sprintf(buf,"%d\n",raw_data0);
 }
@@ -1662,11 +1626,9 @@ static ssize_t touchkey_raw_data1_show(struct device *dev, struct device_attribu
 	u8 data[26];
 	int ret;
 
-        mutex_lock(&touchkey_driver->mutex);
 	printk("called %s \n",__func__);
 	ret = i2c_touchkey_read(KEYCODE_REG, data, 26);
 	printk("called %s data[20] =%d,data[21] = %d\n",__func__,data[20],data[21]);
-        mutex_unlock(&touchkey_driver->mutex);
 	raw_data1 = ((0x00FF&data[20])<<8)|data[21];
 	return sprintf(buf,"%d\n",raw_data1);
 }
@@ -1676,11 +1638,9 @@ static ssize_t touchkey_raw_data2_show(struct device *dev, struct device_attribu
 	u8 data[26];
 	int ret;
 
-        mutex_lock(&touchkey_driver->mutex);
 	printk("called %s \n",__func__);
 	ret = i2c_touchkey_read(KEYCODE_REG, data, 26);
 	printk("called %s data[22] =%d,data[23] = %d\n",__func__,data[22],data[23]);
-        mutex_unlock(&touchkey_driver->mutex);
 	raw_data2 = ((0x00FF&data[22])<<8)|data[23];
 	return sprintf(buf,"%d\n",raw_data2);
 }
@@ -1690,11 +1650,9 @@ static ssize_t touchkey_raw_data3_show(struct device *dev, struct device_attribu
 	u8 data[26];
 	int ret;
 
-        mutex_lock(&touchkey_driver->mutex);
 	printk("called %s \n",__func__);
 	ret = i2c_touchkey_read(KEYCODE_REG, data, 26);
 	printk("called %s data[24] =%d,data[25] = %d\n",__func__,data[24],data[25]);
-        mutex_unlock(&touchkey_driver->mutex);
 	raw_data3 = ((0x00FF&data[24])<<8)|data[25];
 	return sprintf(buf,"%d\n",raw_data3);
 }
@@ -1704,11 +1662,9 @@ static ssize_t touchkey_idac0_show(struct device *dev, struct device_attribute *
 	u8 data[10];
 	int ret;
 
-        mutex_lock(&touchkey_driver->mutex);
 	printk("called %s \n",__func__);
 	ret = i2c_touchkey_read(KEYCODE_REG, data, 10);
 	printk("called %s data[6] =%d\n",__func__,data[6]);
-        mutex_unlock(&touchkey_driver->mutex);
 	idac0 = data[6];
 	return sprintf(buf,"%d\n",idac0);
 }
@@ -1718,25 +1674,21 @@ static ssize_t touchkey_idac1_show(struct device *dev, struct device_attribute *
 	u8 data[10];
 	int ret;
 
-        mutex_lock(&touchkey_driver->mutex);
 	printk("called %s \n",__func__);
 	ret = i2c_touchkey_read(KEYCODE_REG, data, 10);
 	printk("called %s data[7] = %d\n",__func__,data[7]);
-        mutex_unlock(&touchkey_driver->mutex);
 	idac1 = data[7];
 	return sprintf(buf,"%d\n",idac1);
-}
+}	
 
 static ssize_t touchkey_idac2_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	u8 data[10];
 	int ret;
 
-        mutex_lock(&touchkey_driver->mutex);
 	printk("called %s \n",__func__);
 	ret = i2c_touchkey_read(KEYCODE_REG, data, 10);
 	printk("called %s data[8] =%d\n",__func__,data[8]);
-        mutex_unlock(&touchkey_driver->mutex);
 	idac2 = data[8];
 	return sprintf(buf,"%d\n",idac2);
 }
@@ -1746,11 +1698,9 @@ static ssize_t touchkey_idac3_show(struct device *dev, struct device_attribute *
 	u8 data[10];
 	int ret;
 
-        mutex_lock(&touchkey_driver->mutex);
 	printk("called %s \n",__func__);
 	ret = i2c_touchkey_read(KEYCODE_REG, data, 10);
 	printk("called %s data[9] = %d\n",__func__,data[9]);
-        mutex_unlock(&touchkey_driver->mutex);
 	idac3 = data[9];
 	return sprintf(buf,"%d\n",idac3);
 }
@@ -1761,12 +1711,10 @@ static ssize_t autocalibration_enable(struct device *dev, struct device_attribut
 {
         int data;
 
-	mutex_lock(&touchkey_driver->mutex);
         sscanf(buf, "%d\n", &data);
 
         if(data == 1)
                 touchkey_auto_calibration(1/*on*/);
-	mutex_unlock(&touchkey_driver->mutex);
 
         return size;
 }
@@ -1779,9 +1727,7 @@ static ssize_t autocalibration_status(struct device *dev, struct device_attribut
         printk("called %s \n",__func__);
 
 
-        mutex_lock(&touchkey_driver->mutex);
         ret = i2c_touchkey_read(KEYCODE_REG, data, 6);
-        mutex_unlock(&touchkey_driver->mutex);
         if((data[5] & 0x80))
                 return sprintf(buf,"Enabled\n");
         else
@@ -1794,8 +1740,6 @@ static ssize_t autocalibration_status(struct device *dev, struct device_attribut
 static ssize_t touch_sensitivity_control(struct device *dev, struct device_attribute *attr, const char *buf, size_t size)
 {
 	unsigned char data = 0x40;
-
-	mutex_lock(&touchkey_driver->mutex);
 #if defined (CONFIG_KOR_MODEL_SHV_E160L)
 //	int ret;
 //	unsigned char data_buf[2]={0,};
@@ -1805,7 +1749,7 @@ static ssize_t touch_sensitivity_control(struct device *dev, struct device_attri
     {
 		printk( "%s enable_irq\n",__func__);
 		touchkey_enable = 1;
-		enable_irq(IRQ_TOUCHKEY_INT);
+		enable_irq(IRQ_TOUCHKEY_INT);    
     }
 /*
 	if (sscanf(buf, "%c\n", data_buf[0]) == 1) {
@@ -1818,81 +1762,11 @@ static ssize_t touch_sensitivity_control(struct device *dev, struct device_attri
 	}
 */
 #endif
-	printk("[TKEY] called %s \n",__func__);
+	printk("[TKEY] called %s \n",__func__);	
 	i2c_touchkey_write(&data, 1);
-	mutex_unlock(&touchkey_driver->mutex);
 	return size;
 }
 
-#if defined (CONFIG_USA_MODEL_SGH_T989) || defined(CONFIG_USA_MODEL_SGH_I727) || defined(CONFIG_USA_MODEL_SGH_I717) \
-|| defined (CONFIG_KOR_MODEL_SHV_E110S)|| defined(CONFIG_KOR_MODEL_SHV_E160L) || defined(CONFIG_CAN_MODEL_SGH_I757M)\
-|| defined(CONFIG_USA_MODEL_SGH_I757) || defined (CONFIG_USA_MODEL_SGH_T769) || defined(CONFIG_USA_MODEL_SGH_I577) || defined(CONFIG_CAN_MODEL_SGH_I577R) || defined(CONFIG_JPN_MODEL_SC_05D)
-static ssize_t touch_recommend_read(struct device *dev, struct device_attribute *attr, char *buf)
-{
-	char data[3] = { 0, };
-	int count;
-	mutex_lock(&touchkey_driver->mutex);
-#if defined (CONFIG_KOR_MODEL_SHV_E110S)
-		if ((get_hw_rev() == 0x03) || (get_hw_rev() == 0x04)){
-			data[1] = 0x08;
-		} else if (get_hw_rev() == 0x05){
-			data[1] = 0x00;
-		} else if (get_hw_rev() == 0x06){
-			data[1] = 0x02;
-		} else if (get_hw_rev() >= 0x07){
-			data[1] = 0x07;
-		}
-#elif defined(CONFIG_KOR_MODEL_SHV_E160L)
-    printk(KERN_ERR "data_mdule_rev = %x\n",data_mdule_rev);
-	if (get_hw_rev() >=0x02 ){
-		if(data_mdule_rev ==0x02)
-			data[1] = 0x03;
-		else
-			data[1] = 0x07;
-        } else{
-		data[1] = 0x00;
-	}
-#elif defined(CONFIG_USA_MODEL_SGH_I577) || defined(CONFIG_CAN_MODEL_SGH_I577R)
-		data[1] = BUIL_FW_VER;
-#elif defined (CONFIG_EUR_MODEL_GT_I9210)
-	if (get_hw_rev() >=0x07)
-		data[1] = 0x07;
-	else
-		data[1] = 0x00;
-#elif defined (CONFIG_USA_MODEL_SGH_I727)
-        if (get_hw_rev() >=0x0a)
-                data[1] = 0x12;
-		else
-                data[1] = 0x07;
-#elif defined(CONFIG_USA_MODEL_SGH_I757)  || defined(CONFIG_CAN_MODEL_SGH_I757M)
-	if (get_hw_rev() >= 0x04)
-		data[1] = 0x06;
-	else
-		data[1] = 0x03;
-#elif defined (CONFIG_USA_MODEL_SGH_I717)
-                data[1] = 0x04;
-#elif defined (CONFIG_USA_MODEL_SGH_T769)
-        data[1] = BUILTIN_FW_VER;
-#elif defined (CONFIG_USA_MODEL_SGH_T989)
-        if (get_hw_rev() >= 0x0d)
-                data[1] = 0x13;
-      else if (get_hw_rev() >= 0x09)
-	  	data[1] = 0x11;
-         else if (get_hw_rev() == 0x08)
-		   data[1] = 0x0f;
-         else if (get_hw_rev() == 0x05)
-		   data[1] = 0x0c;
-#elif defined (CONFIG_JPN_MODEL_SC_03D)
-	data[1] = firm_version;
-#endif
-
-	count = sprintf(buf, "0x%x\n", data[1]);
-	mutex_unlock(&touchkey_driver->mutex);
-
-	printk("touch_recommend_read 0x%x\n", data[1]);
-	return count;
-}
-#else
 static ssize_t set_touchkey_firm_version_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	/*TO DO IT */
@@ -1906,17 +1780,6 @@ static ssize_t set_touchkey_firm_version_show(struct device *dev, struct device_
 #endif
 	return count;
 }
-#endif
-
-#if defined(CONFIG_JPN_MODEL_SC_05D)
-static ssize_t set_touchkey_firm_version_show(struct device *dev, struct device_attribute *attr, char *buf)
-{
-	/*TO DO IT */
-	int count;
-	count = sprintf(buf, "0x%x\n", FIRMWARE_VERSION);
-	return count;
-}
-#endif
 
 static ssize_t set_touchkey_update_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -1925,7 +1788,6 @@ static ssize_t set_touchkey_update_show(struct device *dev, struct device_attrib
 	int retry=3;
 	touchkey_update_status = 1;
 
-	mutex_lock(&touchkey_driver->mutex);
 #ifdef TEST_JIG_MODE
 	unsigned char get_touch = 0x40;
 #endif
@@ -1959,7 +1821,6 @@ static ssize_t set_touchkey_update_show(struct device *dev, struct device_attrib
 #ifdef TEST_JIG_MODE
 	i2c_touchkey_write(&get_touch, 1);
 #endif
-	mutex_unlock(&touchkey_driver->mutex);
 
 	return count;
 }
@@ -1970,11 +1831,9 @@ static ssize_t set_touchkey_autocal_show(struct device *dev, struct device_attri
 
 	/*TO DO IT */
 
-	mutex_lock(&touchkey_driver->mutex);
-	printk("called %s \n",__func__);
+	printk("called %s \n",__func__);	
 	count0 = cypress_write_register(0x00, 0x50);
 	count1 = cypress_write_register(0x03, 0x01);
-	mutex_unlock(&touchkey_driver->mutex);
 
     // init_hw();	/* after update, re initalize. */
 	return (count0&&count1);
@@ -1985,7 +1844,6 @@ static ssize_t set_touchkey_firm_version_read_show(struct device *dev, struct de
 	char data[3] = { 0, };
 	int count;
 
-        mutex_lock(&touchkey_driver->mutex);
 	init_hw();
 	if (get_touchkey_firmware(data) != 0) {
 		i2c_touchkey_read(KEYCODE_REG, data, 3);
@@ -1993,7 +1851,6 @@ static ssize_t set_touchkey_firm_version_read_show(struct device *dev, struct de
 	count = sprintf(buf, "0x%x\n", data[1]);
 
 	printk(KERN_DEBUG "[TouchKey] touch_version_read 0x%x\n", data[1]);
-        mutex_unlock(&touchkey_driver->mutex);
 	return count;
 }
 
@@ -2001,7 +1858,6 @@ static ssize_t set_touchkey_firm_status_show(struct device *dev, struct device_a
 {
 	int count = 0;
 
-        mutex_lock(&touchkey_driver->mutex);
 	printk(KERN_DEBUG
 	       "[TouchKey] touch_update_read: touchkey_update_status %d\n",
 	       touchkey_update_status);
@@ -2013,7 +1869,6 @@ static ssize_t set_touchkey_firm_status_show(struct device *dev, struct device_a
 	} else if (touchkey_update_status == -1) {
 		count = sprintf(buf, "Fail\n");
 	}
-        mutex_unlock(&touchkey_driver->mutex);
 	return count;
 }
 
@@ -2034,7 +1889,7 @@ static void change_touch_key_led_voltage(int vol_mv)
 	if ( ret ) {
 		printk("%s: error setting voltage\n", __func__);
 	}
-
+    
 	regulator_put(tled_regulator);
 }
 
@@ -2042,14 +1897,12 @@ static ssize_t brightness_control(struct device *dev, struct device_attribute *a
 {
 	int data;
 
-	mutex_lock(&touchkey_driver->mutex);
 	if (sscanf(buf, "%d\n", &data) == 1) {
 		printk(KERN_ERR "[TouchKey] touch_led_brightness: %d \n", data);
 		change_touch_key_led_voltage(data);
 	} else {
 		printk(KERN_ERR "[TouchKey] touch_led_brightness Error\n");
 	}
-	mutex_unlock(&touchkey_driver->mutex);
 	return size;
 }
 
@@ -2099,7 +1952,7 @@ static DEVICE_ATTR(touchkey_brightness, S_IRUGO | S_IWUSR | S_IWGRP, brightness_
  || defined(CONFIG_USA_MODEL_SGH_I757) || defined(CONFIG_CAN_MODEL_SGH_I757M)
 static DEVICE_ATTR(autocal_enable, S_IRUGO | S_IWUSR | S_IWGRP, NULL, autocalibration_enable);
 static DEVICE_ATTR(autocal_stat, S_IRUGO | S_IWUSR | S_IWGRP, autocalibration_status, NULL);
-#endif
+#endif 
 
 
 #ifdef CONFIG_BATTERY_SEC
@@ -2117,9 +1970,6 @@ static int __init touchkey_init(void)
 
 	char data[3] = { 0, };
 
-#if defined (CONFIG_USA_MODEL_SGH_I727)
-	extern int ISSP_main(int touchkey_pba_rev);
-#endif
     printk("[TKEY] touchkey_init START \n");
 
 #ifdef CONFIG_BATTERY_SEC
@@ -2145,7 +1995,7 @@ static int __init touchkey_init(void)
 	if (device_create_file(touchkey_update_device.this_device, &dev_attr_touch_recommend) < 0) {
 		printk("%s device_create_file fail dev_attr_touch_recommend\n", __FUNCTION__);
 		pr_err("Failed to create device file(%s)!\n", dev_attr_touch_recommend.attr.name);
-	}
+	}		
 
 	if (device_create_file (touchkey_update_device.this_device, &dev_attr_touch_update) < 0) {
 		printk("%s device_create_file fail dev_attr_touch_update\n", __FUNCTION__);
@@ -2189,7 +2039,7 @@ static int __init touchkey_init(void)
 		printk(KERN_ERR "%s device_create_file fail dev_attr_touchkey_raw_data0\n",	__func__);
 		pr_err("Failed to create device file(%s)!\n", dev_attr_touchkey_raw_data0.attr.name);
 	}
-
+	
 	if (device_create_file (touchkey_update_device.this_device, &dev_attr_touchkey_raw_data1) < 0) {
 		printk(KERN_ERR "%s device_create_file fail dev_attr_touchkey_raw_data1\n",	__func__);
 		pr_err("Failed to create device file(%s)!\n", dev_attr_touchkey_raw_data1.attr.name);
@@ -2204,7 +2054,7 @@ static int __init touchkey_init(void)
 		printk(KERN_ERR "%s device_create_file fail dev_attr_touchkey_raw_data3\n",	__func__);
 		pr_err("Failed to create device file(%s)!\n", dev_attr_touchkey_raw_data3.attr.name);
 	}
-
+	
 	if (device_create_file (touchkey_update_device.this_device, &dev_attr_touchkey_idac0) < 0) {
 		printk(KERN_ERR "%s device_create_file fail dev_attr_touchkey_idac0\n",	__func__);
 		pr_err("Failed to create device file(%s)!\n", dev_attr_touchkey_idac0.attr.name);
@@ -2213,8 +2063,8 @@ static int __init touchkey_init(void)
 	if (device_create_file(touchkey_update_device.this_device, &dev_attr_touchkey_idac1) < 0) {
 		printk(KERN_ERR "%s device_create_file fail dev_attr_touchkey_idac1\n",	__func__);
 		pr_err("Failed to create device file(%s)!\n", dev_attr_touchkey_idac1.attr.name);
-	}
-
+	}	
+	
 	if (device_create_file (touchkey_update_device.this_device, &dev_attr_touchkey_idac2) < 0) {
 		printk(KERN_ERR "%s device_create_file fail dev_attr_touchkey_idac2\n",	__func__);
 		pr_err("Failed to create device file(%s)!\n", dev_attr_touchkey_idac2.attr.name);
@@ -2223,13 +2073,13 @@ static int __init touchkey_init(void)
 	if (device_create_file (touchkey_update_device.this_device, &dev_attr_touchkey_idac3) < 0) {
 		printk(KERN_ERR "%s device_create_file fail dev_attr_touchkey_idac3\n",	__func__);
 		pr_err("Failed to create device file(%s)!\n", dev_attr_touchkey_idac3.attr.name);
-	}
+	}	
 
 	if (device_create_file (touchkey_update_device.this_device, &dev_attr_touch_sensitivity) < 0) {
 		printk("%s device_create_file fail dev_attr_touch_sensitivity\n", __FUNCTION__);
 		pr_err("Failed to create device file(%s)!\n", dev_attr_touch_sensitivity.attr.name);
 	}
-
+	
 #if defined (CONFIG_USA_MODEL_SGH_T769) || defined(CONFIG_USA_MODEL_SGH_I577) || defined(CONFIG_CAN_MODEL_SGH_I577R)\
  || defined(CONFIG_USA_MODEL_SGH_I757) || defined(CONFIG_CAN_MODEL_SGH_I757M)
 	if (device_create_file (touchkey_update_device.this_device, &dev_attr_autocal_enable) < 0) {
@@ -2241,7 +2091,7 @@ static int __init touchkey_init(void)
 		printk(KERN_ERR "%s device_create_file fail dev_attr_autocal_stat\n",__func__);
 		pr_err("Failed to create device file(%s)!\n",dev_attr_autocal_stat.attr.name);
 	}
-#endif
+#endif 
 
 	sec_touchkey= device_create(sec_class, NULL, 0, NULL, "sec_touchkey");
 
@@ -2262,7 +2112,7 @@ static int __init touchkey_init(void)
 	}
 	if (device_create_file(sec_touchkey, &dev_attr_touchkey_firm_version_panel)< 0)	{
 		printk("Failed to create device file(%s)!\n", dev_attr_touchkey_firm_version_panel.attr.name);
-	}
+	}	
 	if (device_create_file(sec_touchkey, &dev_attr_touchkey_brightness)< 0)	{
 		printk(KERN_ERR "Failed to create device file(%s)!\n", dev_attr_touchkey_brightness.attr.name);
 	}
@@ -2275,7 +2125,7 @@ static int __init touchkey_init(void)
 	}
 #endif
 
-	touchkey_wq = create_singlethread_workqueue("sec_touchkey_wq");
+	touchkey_wq = create_singlethread_workqueue("melfas_touchkey_wq");
 	if (!touchkey_wq)
 		return -ENOMEM;
 
@@ -2284,14 +2134,14 @@ static int __init touchkey_init(void)
 
 #if defined (CONFIG_KOR_MODEL_SHV_E110S)
 	if (get_hw_rev() >= 0x06){
-		irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_RISING);
-	} else {
+		irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_RISING);	
+	} else { 
 		irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_FALLING);
 	}
 #elif defined (CONFIG_JPN_MODEL_SC_03D)
 	if (get_hw_rev() >= 0x05){
-		irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_RISING);
-	} else {
+		irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_RISING);	
+	} else {  
 		irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_FALLING);
 	}
 #elif defined(CONFIG_USA_MODEL_SGH_I577) || defined(CONFIG_CAN_MODEL_SGH_I577R)
@@ -2299,29 +2149,31 @@ static int __init touchkey_init(void)
 
 #elif defined (CONFIG_EUR_MODEL_GT_I9210)
 	if (get_hw_rev() >= 0x07){
-		irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_RISING);
-	} else {
+		irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_RISING);	
+	} else { 
 		irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_FALLING);
 	}
 #elif defined (CONFIG_USA_MODEL_SGH_I727)
 	if (get_hw_rev() >= 0x0a){
-		irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_RISING);
-	} else {
+		irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_RISING);	
+	} else { 
 		irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_FALLING);
 	}
 #elif defined (CONFIG_USA_MODEL_SGH_I717) || defined(CONFIG_KOR_MODEL_SHV_E160L)\
-   || defined(CONFIG_USA_MODEL_SGH_I757) || defined(CONFIG_CAN_MODEL_SGH_I757M)
+   || defined(CONFIG_USA_MODEL_SGH_I757) || defined(CONFIG_CAN_MODEL_SGH_I757M)	
 		irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_FALLING);
 #elif defined (CONFIG_USA_MODEL_SGH_T989) || defined (CONFIG_USA_MODEL_SGH_T769)
 	if (get_hw_rev() >= 0x0d){
-		irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_RISING);
-	} else {
+		irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_RISING);	
+	} else { 
 		irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_FALLING);
 	}
-#elif defined (CONFIG_JPN_MODEL_SC_05D)
+	
+#elif defined (CONFIG_JPN_MODEL_SC_05D) 
 	irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_EDGE_FALLING);
 
 #else
+
 		irq_set_irq_type(IRQ_TOUCHKEY_INT, IRQ_TYPE_LEVEL_LOW);
 #endif
 
@@ -2336,11 +2188,11 @@ static int __init touchkey_init(void)
     if(retry < 0)
         return 0;
 #endif
-
-	printk("[TKEY] %s F/W version: 0x%x, Module version:0x%x, HW_REV: 0x%x\n", __FUNCTION__, data[1], data[2], get_hw_rev());
+	
+//	printk("[TKEY] %s F/W version: 0x%x, Module version:0x%x, HW_REV: 0x%x\n", __FUNCTION__, data[1], data[2], get_hw_rev());
 	touch_version = data[1];
 	retry = 3;
-
+	
 #if defined (CONFIG_USA_MODEL_SGH_T769)
 	if(data[1] > 0x03 && data[1] < BUILTIN_FW_VER) {
 		extern int ISSP_main(int touchkey_pba_rev);
@@ -2360,6 +2212,7 @@ static int __init touchkey_init(void)
 #elif defined(CONFIG_USA_MODEL_SGH_T989)//new touchkey fpcb
 	//update version "eclair/vendor/samsung/apps/Lcdtest/src/com/sec/android/app/lcdtest/touch_firmware.java"
 	if ((data[1] == 0x01) && (data[2] < 0x05)) {
+		extern int ISSP_main(int touchkey_pba_rev);
 		set_touchkey_debug('U');
 		while (retry--) {
 			if (ISSP_main(TOUCHKEY_PBA_REV_NA) == 0) {
@@ -2374,6 +2227,7 @@ static int __init touchkey_init(void)
 	}
 	else if (((data[1] != 0x0c) && (data[2] == 0x02) ) || ((((data[1] == 0x0) && (data[2] == 0x0) )||((data[1] == 0xff) && (data[2] == 0xff) ))&& (get_hw_rev() ==0x05 )))
 		{
+		extern int ISSP_main(int touchkey_pba_rev);
 		touchkey_pba_revision = TOUCHKEY_PBA_REV_02;
 		set_touchkey_debug('U');
 		while (retry--) {
@@ -2389,6 +2243,7 @@ static int __init touchkey_init(void)
 	}
 	else if (((data[1] < 0x0f) && (data[2] == 0x03) )  || ((((data[1] == 0x0) && (data[2] == 0x0) )||((data[1] == 0xff) && (data[2] == 0xff) ))&& (get_hw_rev() ==0x08 )))
 		{
+		extern int ISSP_main(int touchkey_pba_rev);
 		touchkey_pba_revision = TOUCHKEY_PBA_REV_03;
 		set_touchkey_debug('U');
 		while (retry--) {
@@ -2404,6 +2259,7 @@ static int __init touchkey_init(void)
 	}
 	else if (((data[1] < 0x11) && (data[2] == 0x04) )  || ((((data[1] == 0x0) && (data[2] == 0x0) )||((data[1] == 0xff) && (data[2] == 0xff) ))&& (get_hw_rev() >=0x09 )&&(get_hw_rev() <0x0d )))
 		{
+		extern int ISSP_main(int touchkey_pba_rev);
 		touchkey_pba_revision = TOUCHKEY_PBA_REV_04;
 		set_touchkey_debug('U');
 		while (retry--) {
@@ -2419,6 +2275,7 @@ static int __init touchkey_init(void)
 	}
 	else if (((data[1] < 0x13) && (data[2] == 0x05) )  || ((((data[1] == 0x0) && (data[2] == 0x0) )||((data[1] == 0xff) && (data[2] == 0xff) ))&& (get_hw_rev() >=0x0d )))
 		{
+		extern int ISSP_main(int touchkey_pba_rev);
 		touchkey_pba_revision = TOUCHKEY_PBA_REV_05;
 		set_touchkey_debug('U');
 		while (retry--) {
@@ -2435,21 +2292,21 @@ static int __init touchkey_init(void)
 #elif defined (CONFIG_EUR_MODEL_GT_I9210)
 	if (get_hw_rev()<0x7 ) // Don't use update under H/W rev0.2
 	{
-		printk("%s : I9210 update tkey...\n",__func__);
-
+		printk("%s : I9210 update tkey...\n",__func__); 
+   
 		init_hw();	//after update, re initalize.
-
+	
 		get_touchkey_firmware(data);
 		printk("%s change to F/W version: 0x%x, Module version:0x%x\n", __FUNCTION__,
 		data[1], data[2]);
 	}
 	else if ((data[1] != 0x00) && (data[1] != 0x07) && (get_hw_rev() >=0x07)) // H/W rev0.3
 	{
-/*		extern int ISSP_main(int touchkey_pba_rev); */ /* remove because  alreadry declared*/
-		printk("%s : I9210 update 3 tkey...\n",__func__);
+		printk("%s : I9210 update 3 tkey...\n",__func__);	
+		extern int ISSP_main(int touchkey_pba_rev);
 		set_touchkey_debug('U');
 		while (retry--) {
-			if (ISSP_main(0) == 0) {
+			if (ISSP_main(NULL) == 0) {
 				printk("touchkey_update succeeded\n");
 				set_touchkey_debug('C');
 				break;
@@ -2465,12 +2322,12 @@ static int __init touchkey_init(void)
 		data[1], data[2]);
 	}
 #elif defined(CONFIG_USA_MODEL_SGH_I577) || defined(CONFIG_CAN_MODEL_SGH_I577R)
-	if (data[1] < BUIL_FW_VER) {
+	if (data[1] != BUIL_FW_VER) {
+		printk("%s : update 577 tkey...\n",__func__);	
 		extern int ISSP_main(int touchkey_pba_rev);
-		printk("%s : update 577 tkey...\n",__func__);
 		set_touchkey_debug('U');
 		while (retry--) {
-			if (ISSP_main(0) == 0) {
+			if (ISSP_main(NULL) == 0) {
 				printk("touchkey_update succeeded\n");
 				set_touchkey_debug('C');
 				break;
@@ -2483,14 +2340,15 @@ static int __init touchkey_init(void)
 	//	printk("%s change to F/W version: 0x%x, Module version:0x%x\n", __FUNCTION__, data[1], data[2]);
 
 	}
-
+	
 #elif defined (CONFIG_USA_MODEL_SGH_I727)
-	if (((data[1] < 0x07) && (data[2] == 0x15))|| ((((data[1] == 0x0) && (data[2] == 0x0) )||((data[1] == 0xff) && (data[2] == 0xff) ))&& ((get_hw_rev() >=0x05 )&& (get_hw_rev()<0x0a))))
+	 if (((data[1] < 0x07) && (data[2] == 0x15))|| ((((data[1] == 0x0) && (data[2] == 0x0) )||((data[1] == 0xff) && (data[2] == 0xff) ))&& ((get_hw_rev() >=0x05 )&& (get_hw_rev()<0x0a))))
 {
-		printk("%s : update 727 tkey...\n",__func__);
+		printk("%s : update 727 tkey...\n",__func__);	
+		extern int ISSP_main(int touchkey_pba_rev);
 		set_touchkey_debug('U');
 		while (retry--) {
-			if (ISSP_main(0) == 0) {
+			if (ISSP_main(NULL) == 0) {
 				printk("touchkey_update succeeded\n");
 				set_touchkey_debug('C');
 				break;
@@ -2502,12 +2360,13 @@ static int __init touchkey_init(void)
 		get_touchkey_firmware(data);
 		printk("%s change to F/W version: 0x%x, Module version:0x%x\n", __FUNCTION__, data[1], data[2]);
 	}
-		else if (((data[1] < 0x09) && (data[2] == 0x18))|| ((((data[1] == 0x0) && (data[2] == 0x0) )||((data[1] == 0xff) && (data[2] == 0xff) ))&& (get_hw_rev() >=0x0a )))
+		else if (((data[1] == 0x09) && (data[2] == 0x18))|| ((((data[1] == 0x0) && (data[2] == 0x0) )||((data[1] == 0xff) && (data[2] == 0xff) ))&& (get_hw_rev() >=0x0a )))
 {
-		printk("%s : update 727 tkey...\n",__func__);
+		printk("%s : update 727 tkey...\n",__func__);	
+		extern int ISSP_main(int touchkey_pba_rev);
 		set_touchkey_debug('U');
 		while (retry--) {
-			if (ISSP_main(0) == 0) {
+			if (ISSP_main(NULL) == 0) {
 				printk("touchkey_update succeeded\n");
 				set_touchkey_debug('C');
 				break;
@@ -2519,14 +2378,15 @@ static int __init touchkey_init(void)
 		get_touchkey_firmware(data);
 		printk("%s change to F/W version: 0x%x, Module version:0x%x\n", __FUNCTION__, data[1], data[2]);
 	}
+
 #elif defined (CONFIG_USA_MODEL_SGH_I717)
-	if (((data[1] != 0x04) && (data[2] <= 0x2))|| ((((data[1] == 0x0) && (data[2] == 0x0) )||((data[1] == 0xff) && (data[2] == 0xff) ))))
+	if (data[1] != 0x04)//(((data[1] != 0x04) && (data[2] <= 0x2))|| ((((data[1] == 0x0) && (data[2] == 0x0) )||((data[1] == 0xff) && (data[2] == 0xff) ))))
     {
-            printk("%s : update 727 tkey...\n",__func__);
-            //extern int ISSP_main(int touchkey_pba_rev);
+            printk("%s : update 727 tkey...\n",__func__);   
+            extern int ISSP_main(int touchkey_pba_rev);
             set_touchkey_debug('U');
             while (retry--) {
-                if (ISSP_main(0) == 0) {
+                if (ISSP_main(NULL) == 0) {
                     printk("touchkey_update succeeded\n");
                     set_touchkey_debug('C');
                     break;
@@ -2538,14 +2398,14 @@ static int __init touchkey_init(void)
             get_touchkey_firmware(data);
             printk("%s change to F/W version: 0x%x, Module version:0x%x\n", __FUNCTION__, data[1], data[2]);
         }
-
+    
 	else if (((data[1] < 0x09) && (data[2] == 0x18))|| ((((data[1] == 0x0) && (data[2] == 0x0) )||((data[1] == 0xff) && (data[2] == 0xff) ))&& (get_hw_rev() >=0x0a )))
 {
-		printk("%s : update 727 tkey...\n",__func__);
-		//extern int ISSP_main(int touchkey_pba_rev);
+		printk("%s : update 727 tkey...\n",__func__);	
+		extern int ISSP_main(int touchkey_pba_rev);
 		set_touchkey_debug('U');
 		while (retry--) {
-			if (ISSP_main(0) == 0) {
+			if (ISSP_main(NULL) == 0) {
 				printk("touchkey_update succeeded\n");
 				set_touchkey_debug('C');
 				break;
@@ -2559,7 +2419,7 @@ static int __init touchkey_init(void)
 	}
 #elif defined (CONFIG_KOR_SHV_E120L_WXGA)
 	if ((data[1] != 0x05) || (data[2] != 0x00)) {
-printk("%s : update SHV_E120L_WXGA tkey...\n",__func__);
+printk("%s : update SHV_E120L_WXGA tkey...\n",__func__);	
 		extern int ISSP_main(int touchkey_pba_rev);
 		set_touchkey_debug('U');
 		while (retry--) {
@@ -2590,7 +2450,7 @@ printk("%s : update SHV_E120L_WXGA tkey...\n",__func__);
                         set_touchkey_debug('C');
                         break;
                     }
-				init_hw();
+				init_hw();	
                 }
 			init_hw();	//after update, re initalize.
 			get_touchkey_firmware(data);
@@ -2618,11 +2478,11 @@ printk("%s : update SHV_E120L_WXGA tkey...\n",__func__);
  // E110S Touch key F/W version Fix. Update routine Remove.
 /*	if (((get_hw_rev() == 0x03) && (data[1] != 0x08) && (data[2] == 0x02))
 	|| ((get_hw_rev() == 0x04) && (data[1] != 0x08))// && (data[2] == 0x02))
-	|| ((get_hw_rev() == 0x05) && (data[1] != 0x00)) //&& (data[2] == 0x02))
+	|| ((get_hw_rev() == 0x05) && (data[1] != 0x00)) //&& (data[2] == 0x02))		
 	|| ((get_hw_rev() == 0x06) && (data[1] != 0x02)) //&& (data[2] == 0x03))
 	|| ((get_hw_rev() >= 0x07) && (data[1] != 0x07))) //&& (data[2] == 0x03)))
 		{
-		   printk("%s : update E110S %d!!!...\n",__func__, get_hw_rev());
+		   printk("%s : update E110S %d!!!...\n",__func__, get_hw_rev()); 
 			extern int ISSP_main(int touchkey_pba_rev);
 			set_touchkey_debug('U');
 			while (retry--) {
@@ -2634,23 +2494,23 @@ printk("%s : update SHV_E120L_WXGA tkey...\n",__func__);
 				printk("touchkey_update failed... retry...\n");
 				set_touchkey_debug('f');
 			}
-
+	
 			init_hw();	//after update, re initalize.
-
+	
 			get_touchkey_firmware(data);
 			printk("%s change to F/W version: 0x%x, Module version:0x%x\n", __FUNCTION__,
 			   data[1], data[2]);
-		}
+		}	
 	else
 		{
-		   printk("%s : Touch Key version is latest. E110S %d!!!...\n",__func__, get_hw_rev());
+		   printk("%s : Touch Key version is latest. E110S %d!!!...\n",__func__, get_hw_rev()); 		
 		}*/
 #elif defined (CONFIG_JPN_MODEL_SC_03D)
 		if (get_hw_rev() ==0x01 ){
 			firm_version = 0x02;
-			if ((data[1] != 0x02) || (data[2] != 0x00))
+			if ((data[1] != 0x02) || (data[2] != 0x00)) 
 			{
-			   printk("%s : update SD-03D...\n",__func__);
+			   printk("%s : update SD-03D...\n",__func__);	
 				extern int ISSP_main(int touchkey_pba_rev);
 				set_touchkey_debug('U');
 				while (retry--) {
@@ -2662,18 +2522,18 @@ printk("%s : update SHV_E120L_WXGA tkey...\n",__func__);
 					printk("touchkey_update failed... retry...\n");
 					set_touchkey_debug('f');
 				}
-
+		
 				init_hw();	//after update, re initalize.
-
+		
 				get_touchkey_firmware(data);
 				printk("%s change to F/W version: 0x%x, Module version:0x%x\n", __FUNCTION__,
 				   data[1], data[2]);
 			}
 		}else if (get_hw_rev() ==0x02 ){
 			firm_version = 0x08;
-			if ((data[1] != 0x08) || (data[2] != 0x02))
+			if ((data[1] != 0x08) || (data[2] != 0x02)) 
 			{
-			   printk("%s : REV02 update SD-03D...\n",__func__);
+			   printk("%s : REV02 update SD-03D...\n",__func__);	
 				extern int ISSP_main(int touchkey_pba_rev);
 				set_touchkey_debug('U');
 				while (retry--) {
@@ -2685,18 +2545,18 @@ printk("%s : update SHV_E120L_WXGA tkey...\n",__func__);
 					printk("touchkey_update failed... retry...\n");
 					set_touchkey_debug('f');
 				}
-
+		
 				init_hw();	//after update, re initalize.
-
+		
 				get_touchkey_firmware(data);
 				printk("%s change to F/W version: 0x%x, Module version:0x%x\n", __FUNCTION__,
 				   data[1], data[2]);
 			}
 		} else if (get_hw_rev() ==0x04){	// PBA rev0.3
 			firm_version = 0x02;
-			if ((data[1] != 0x02) || (data[2] != 0x00))
+			if ((data[1] != 0x02) || (data[2] != 0x00)) 
 			{
-			   printk("%s : REV04 update SD-03D...\n",__func__);
+			   printk("%s : REV04 update SD-03D...\n",__func__);	
 				extern int ISSP_main(int touchkey_pba_rev);
 				set_touchkey_debug('U');
 				while (retry--) {
@@ -2708,9 +2568,9 @@ printk("%s : update SHV_E120L_WXGA tkey...\n",__func__);
 					printk("touchkey_update failed... retry...\n");
 					set_touchkey_debug('f');
 				}
-
+		
 				init_hw();	//after update, re initalize.
-
+		
 				get_touchkey_firmware(data);
 				printk("%s change to F/W version: 0x%x, Module version:0x%x\n", __FUNCTION__,
 				   data[1], data[2]);
@@ -2719,7 +2579,7 @@ printk("%s : update SHV_E120L_WXGA tkey...\n",__func__);
 			firm_version = 0x07;
 			if ((data[1] != 0x07) || (data[2] != 0x03)) // need to change
 			{
-				  printk("%s : after PCB REV04, update SD-03D...\n",__func__);
+				  printk("%s : after PCB REV04, update SD-03D...\n",__func__); 
 				extern int ISSP_main(int touchkey_pba_rev);
 				set_touchkey_debug('U');
 				while (retry--) {
@@ -2740,7 +2600,7 @@ printk("%s : update SHV_E120L_WXGA tkey...\n",__func__);
 	ret = i2c_add_driver(&touchkey_i2c_driver);
 
 	if (ret) {
-		printk ("sec touch keypad registration failed, module not inserted.ret= %d\n", ret);
+		printk ("melfas touch keypad registration failed, module not inserted.ret= %d\n", ret);
 	}
     printk("[TKEY] touchkey_init END \n");
 	return ret;
@@ -2760,4 +2620,5 @@ module_exit(touchkey_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("@@@");
-MODULE_DESCRIPTION("sec touch keypad");
+MODULE_DESCRIPTION("melfas touch keypad");
+
