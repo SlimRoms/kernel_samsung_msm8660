@@ -127,10 +127,10 @@ static int charm_panic_prep(struct notifier_block *this,
 	CHARM_DBG("%s: setting AP2MDM_ERRFATAL high for a non graceful reset\n",
 			 __func__);
 
-#if 0	/* onlyjazz.el20 : remove pm8058_stay_on also in ICS upgrade version in order to avoid por confusion */
+	/* onlyjazz.el20 : remove pm8058_stay_on also in ICS upgrade version in order to avoid por confusion */
 	if (get_restart_level() == RESET_SOC)
 		pm8xxx_stay_on();
-#endif
+
 
 	charm_disable_irqs();
 	gpio_set_value(AP2MDM_ERRFATAL, 1);
