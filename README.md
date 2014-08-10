@@ -1,83 +1,49 @@
-Marla & Moretz Kernels for CM11.0
-===================
+"Mo" Kernel for Slim - README adapted from the forked, original Moretz branch.
+======================================
 
-Branches Supported in this Repository
--------------------
+This kernel is based on the CM-11.0 versions of "Moretz" and "Marla".
 
-**Marla** - CM11.0 based kernel for the Samsung Skyrocket, Hercules, 
-Blaze 4G & Exhilarate devices.  This branch is intended to be very close
-to stock with specific modifications to improve performance and
-battery consumption vs. stock.  This is intended to be a flash
-and forget kernel.  There is no need for users to screw with 
-anything to get optimal results.
+The "Mo" kk4.4 branch is the default, and will be supported as time permits. 
 
-**Moretz** - CM11.0 based kernel for the Samsung Skyrocket, Hercules, 
-Blaze 4G & Exhilarate devices.  This branch is the 'hot rod' kernel, it
-contains over clocked CPU frequencies, a bunch of different schedulers and
-governors, etc.  It is intended for the tweakers.
+Please do not request individual, flashable kernel zip files.  You can compile this yourself as needed if you like...
+
 
 Terms of Use
 -------------------
 
 No warranty implied or written.  You use this source at your own risk.
 
-This is free useable, forkable, kangable, whatever.  However, you **MUST**
-keep original code attributions intact when cherry-picking, forking, etc.
+This is free useable, forkable, kangable, whatever.  However, you **MUST** keep original code attributions intact when cherry-picking, forking, etc.
 
-You do not have to ask permission to use the Moretz & Marla code branches.
-What I do ask is that you at least send me a link to your distribution or
-forked repository in github/bitbucket.  Lastly, please give credit to
-the following people & groups in your distribution:
+You do not have to ask permission to use this, however, please send me a link to your distribution or forked repository in github/bitbucket.  Lastly, please give credit to the following people & groups in your distribution:
 
 	Team Chopsticks
 	CyanogenMod
+	NoSpamDan
+	Wantowan2
 	Car vs Driver
 	elbermu
-	your mom
+
 
 Change requests and bug fixes.
 --------------------
 
-For any bugs or changes, please submit pull requests.  I will review them
-weekly as necessary.
+For any bugs or changes, please submit pull requests.  They will be reviewed as necessary.
 
-Do not submit new feature requests to the marla branch, they will be
-ignored immediately.  New features outside of CM10.2 will only be
-considered for the moretz branch.
-    
-How to pull this into your CM11.0 build.
+   
+How to use this in your SlimKat build.
 --------------------
 
-To use this kernel in your Samsung Hercules, Skyrocket or Exhilarate builds for 
-CM10.2, you will need to edit your roomservice.xml (or local_manifest.xml) and 
-add the following:
+This kernel has been configured to be the default in the Skyrocket and Hercules SlimKat slim.dependencies files.  No modifications should be necessary to these device trees in order to use it.  If you want to build with a different kernel, then you need to add the following to your .repo/local_manifests/slim_manifest.xml file:
 
-	<remote  name="bitbucket"
-		fetch="ssh://git@bitbucket.org" />
-          
-	<project 
-		name="carvsdriver/android_kernel_samsung_msm8660-common" 
-		path="kernel/samsung/msm8660-common" 
-		remote="bitbucket" 
-		revision="moretz" />
-            
-Change your revision to either moretz or marla depending on which one you 
-want to use.
+				<remove-project name="SlimRoms/kernel_samsung_msm8660" />
+				<project name="(your kernel repo)" path="kernel/samsung/msm8660" remote="(your repo host)" revision="(your revision)" />
+				
+This will remove the native one when synced up and pull yours in without needing to modify the slim.dependencies file.
 
-Now, follow the instructions located at the link below for the init.d
-helper scripts that go along with both kernel variants:
 
-https://bitbucket.org/carvsdriver/vendor_moretz-kernel
+MPDecision binary.
+--------------------
+Within the device_samsung_msm8660-common repo, there is a binary included to automatically handle selection of either the built-in mpdecision in "Mo" (/sys/kernel/msm_mpdecision/conf/), or the one included by default in the ROM (/system/bin/mpdecision).  No modification should be needed to use a different kernel in your SlimKat build, should you choose to do so.
 
-Next, you will need to remove the stock kernel from your manifest and 
-cm.depdenencies script.
-
-Finally, you will need to remove the stock mpdecision binary from your
-target ROM. This can be done through your installation script within
-your flashable zip file.  The file you need to remove when using either
-moretz or marla is:
-
-	/system/bin/mpdecision
-
-If you don't remove this, it will conflict with the kernel based
-MSM_MPDecision logic and may cause deadlocks on the CPU cores.
+Enjoy!
