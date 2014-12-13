@@ -2164,6 +2164,11 @@ struct platform_device msm_device_tsif[2] = {
 	}
 };
 
+struct flash_platform_data msm_nand_data = {
+		.parts	= NULL,
+		.nr_parts	= 0,
+};
+
 struct platform_device msm_device_smd = {
 	.name           = "msm_smd",
 	.id             = -1,
