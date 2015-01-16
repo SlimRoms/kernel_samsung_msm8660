@@ -38,8 +38,4 @@ extern struct msm_camera_board_info msm8x60_camera_board_info;
 void msm8x60_init_cam(void);
 #endif
 
-extern int get_partition_num_by_name(char *name);
-
-extern struct flash_platform_data msm_nand_data;
-
 #endif

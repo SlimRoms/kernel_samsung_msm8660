@@ -23,9 +23,6 @@ GPIOMUX_OBJ_NAME:=gpiomux-8x60_p5lte.o
 endif
 
 obj-y += io.o dma.o memory.o
-
-obj-y += emmc_partitions.o
-
 ifndef CONFIG_ARM_ARCH_TIMER
 obj-y += timer.o
 endif

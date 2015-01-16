@@ -27,10 +27,6 @@
 #include <linux/msm_ssbi.h>
 #include <mach/msm_bus.h>
 
-#ifdef CONFIG_ARCH_MSM8X60
-	#include <mach/board-ext-msm8660.h>
-#endif
-
 struct msm_camera_io_ext {
 	uint32_t mdcphy;
 	uint32_t mdcsz;
