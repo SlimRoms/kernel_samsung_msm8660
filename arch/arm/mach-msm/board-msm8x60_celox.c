@@ -55,7 +55,7 @@
 #endif
 
 #ifdef CONFIG_SENSORS_YDA165
-#ifdef CONFIG_USA_MODEL_SGH_I577 || defined(CONFIG_USA_MODEL_SGH_T769)
+#if defined(CONFIG_USA_MODEL_SGH_I577) || defined(CONFIG_USA_MODEL_SGH_T769)
 #include <linux/i2c/yda165_integ.h>
 #else
 #include <linux/i2c/yda165.h>
