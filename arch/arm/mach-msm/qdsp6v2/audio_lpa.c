@@ -118,7 +118,6 @@ static void audlpa_post_event(struct audio *audio, int type,
 
 static unsigned long audlpa_ion_fixup(struct audio *audio, void *addr,
 				unsigned long len, int ref_up);
-static void audlpa_unmap_ion_region(struct audio *audio);
 static void audlpa_async_send_data(struct audio *audio, unsigned needed,
 				uint32_t token);
 static int audlpa_pause(struct audio *audio);
@@ -813,7 +812,7 @@ static long audio_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		break;
 
 	case AUDIO_SET_VOLUME:
-		pr_debug("AUDIO_SET_VOLUME %d, audio->volume=%d", arg, audio->volume);
+		pr_debug("AUDIO_SET_VOLUME %ld, audio->volume=%d", arg, audio->volume);
 		//pr_info("AUDIO_SET_VOLUME %d, audio->volume=%d, mute=%d", (int)arg, audio->volume, audlpa_mute);
 #ifdef LPA_MUTE_CTRL
 		audio->volume = arg;
@@ -1162,26 +1161,6 @@ void audlpa_reset_ion_region(struct audio *audio)
 	}
 
 	return;
-}
-
-static void audlpa_unmap_ion_region(struct audio *audio)
-{
-	struct audlpa_ion_region *region;
-	struct list_head *ptr, *next;
-	int rc = -EINVAL;
-
-	pr_debug("%s[%p]:\n", __func__, audio);
-	list_for_each_safe(ptr, next, &audio->ion_region_queue) {
-		region = list_entry(ptr, struct audlpa_ion_region, list);
-		pr_debug("%s[%p]: phy_address = 0x%lx\n",
-			__func__, audio, region->paddr);
-		if (region != NULL) {
-			rc = q6asm_memory_unmap(audio->ac,
-					(uint32_t)region->paddr, IN);
-			if (rc < 0)
-				pr_err("%s: memory unmap failed\n", __func__);
-		}
-	}
 }
 
 static int audio_release(struct inode *inode, struct file *file)
