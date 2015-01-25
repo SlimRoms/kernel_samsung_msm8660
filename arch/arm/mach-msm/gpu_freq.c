@@ -62,14 +62,10 @@ static ssize_t gpu_freq_store(struct kobject *kobj, struct kobj_attribute *attr,
 	return count;
 }
 
-static struct kobj_attribute gpu_2d_attribute =
-	__ATTR(gpu_2d_freq_phase, 0666, gpu_freq_show, gpu_freq_store);
-
 static struct kobj_attribute gpu_3d_attribute =
 	__ATTR(gpu_3d_freq_phase, 0666, gpu_freq_show, gpu_freq_store);
 
 static struct attribute *gpu_control_attributes[] = {
-	//&gpu_2d_attribute.attr,
 	&gpu_3d_attribute.attr,
 	NULL,
 };
