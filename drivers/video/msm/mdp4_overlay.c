@@ -3082,7 +3082,6 @@ int mdp4_overlay_mdp_perf_req(struct msm_fb_data_type *mfd)
 	u32 worst_mdp_clk = 0;
 	int i;
 	struct mdp4_overlay_perf *perf_req = &perf_request;
-	struct mdp4_overlay_perf *perf_cur = &perf_current;
 	struct mdp4_overlay_pipe *pipe;
 	u32 cnt = 0;
 	int ret = -EINVAL;

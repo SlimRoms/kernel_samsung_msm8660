@@ -41,6 +41,7 @@
 #include "msm_fb.h"
 #ifdef CONFIG_FB_MSM_MDP40
 #include "mdp4.h"
+#include "mdp4_2.h"
 #endif
 #include "mipi_dsi.h"
 

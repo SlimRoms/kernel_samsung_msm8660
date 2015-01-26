@@ -3767,7 +3767,7 @@ static int hdmi_msm_audio_off(void)
 }
 
 
-static uint8 hdmi_msm_avi_iframe_lut[][16] = {
+static uint8 hdmi_msm_avi_iframe_lut[][17] = {
 /*	480p60	480i60	576p50	576i50	720p60	 720p50	1080p60	1080i60	1080p50
 	1080i50	1080p24	1080p30	1080p25	640x480p 480p60_16_9 576p50_4_3 1024p*/
 
