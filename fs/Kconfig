@@ -98,6 +98,7 @@ if BLOCK
 menu "DOS/FAT/NT Filesystems"
 
 source "fs/fat/Kconfig"
+source "fs/exfat/Kconfig"
 source "fs/ntfs/Kconfig"
 
 endmenu
@@ -273,10 +274,5 @@ endif
 
 source "fs/nls/Kconfig"
 source "fs/dlm/Kconfig"
-
-config EXFAT_FS
-	tristate "exFAT File System Support"
-	default n
-	select NLS_UTF8
 
 endmenu
