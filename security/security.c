@@ -571,14 +571,17 @@ int security_inode_permission(struct inode *inode, int mask)
 {
 	if (unlikely(IS_PRIVATE(inode)))
 		return 0;
-	return security_ops->inode_permission(inode, mask, 0);
+	return security_ops->inode_permission(inode, mask);
 }
 
 int security_inode_exec_permission(struct inode *inode, unsigned int flags)
 {
+	int mask = MAY_EXEC;
 	if (unlikely(IS_PRIVATE(inode)))
 		return 0;
-	return security_ops->inode_permission(inode, MAY_EXEC, flags);
+	if (flags)
+		mask |= MAY_NOT_BLOCK;
+	return security_ops->inode_permission(inode, mask);
 }
 
 int security_inode_setattr(struct dentry *dentry, struct iattr *attr)
@@ -1000,12 +1003,6 @@ int security_netlink_send(struct sock *sk, struct sk_buff *skb)
 {
 	return security_ops->netlink_send(sk, skb);
 }
-
-int security_netlink_recv(struct sk_buff *skb, int cap)
-{
-	return security_ops->netlink_recv(skb, cap);
-}
-EXPORT_SYMBOL(security_netlink_recv);
 
 int security_secid_to_secctx(u32 secid, char **secdata, u32 *seclen)
 {
