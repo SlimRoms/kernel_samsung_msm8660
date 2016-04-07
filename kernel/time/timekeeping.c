@@ -288,7 +288,7 @@ void ktime_get_ts(struct timespec *ts)
 	} while (read_seqretry(&xtime_lock, seq));
 
 	set_normalized_timespec(ts, ts->tv_sec + tomono.tv_sec,
-				ts->tv_nsec + tomono.tv_nsec + nsecs);
+		(s64)ts->tv_nsec + tomono.tv_nsec + nsecs);
 }
 EXPORT_SYMBOL_GPL(ktime_get_ts);
 
@@ -1122,6 +1122,8 @@ ktime_t ktime_get_monotonic_offset(void)
 	} while (read_seqretry(&xtime_lock, seq));
 	return timespec_to_ktime(wtom);
 }
+EXPORT_SYMBOL_GPL(ktime_get_monotonic_offset);
+
 
 /**
  * xtime_update() - advances the timekeeping infrastructure
